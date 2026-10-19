@@ -1193,7 +1193,7 @@ function locAtDist(d){
 // Short time zone name (EDT, CDT...) for a location on the race day. Sun times are in that spot's local time.
 function tzAbbr(tz,el){ if(!tz) return ''; try{ const [y,m,d]=(chart.startDate||'2000-01-01').split('-').map(Number), dt=new Date(Date.UTC(y,m-1,d,17)+Math.round(el||0)*60000);
   return new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'short'}).formatToParts(dt).find(p=>p.type==='timeZoneName').value; }catch(e){ return ''; } }
-function tzSfx(tz,el){ const a=tzAbbr(tz,el); return a?' '+a:''; }
+function tzSfx(tz,el){ if(chart&&chart.tz==='hide') return ''; const a=tzAbbr(tz,el); return a?' '+a:''; }
 // Race clock: the time zone of the start (or the first drop bag with a location).
 function raceTz(el){ return hasWx()&&bp.wx.locs.race?tzSfx(bp.wx.locs.race.tz,el):''; }
 function wxZones(){ if(!hasWx()) return []; return [...new Set(Object.values(bp.wx.locs).map(l=>tzAbbr(l.tz,0)).filter(Boolean))]; }
@@ -1441,7 +1441,8 @@ function renderBags(){
     '</div></div><div class="actions"><button class="btn" data-act="b-exit" type="button">Race home</button></div></div></header><div class="greyband bleed"></div>';
   h+=wxBanner();
   h+='<div class="controls dbunits"><div class="ctl"><span class="eyebrow">Distance</span>'+segBtns('unit',[['mi','Miles'],['km','Kilometers']],chart.unit)+'</div>'+
-     '<div class="ctl"><span class="eyebrow">Temperature</span>'+segBtns('tempUnit',[['F','°F'],['C','°C']],tUnit())+'</div></div>';
+     '<div class="ctl"><span class="eyebrow">Temperature</span>'+segBtns('tempUnit',[['F','°F'],['C','°C']],tUnit())+'</div>'+
+     '<div class="ctl"><span class="eyebrow">Time zone on times</span>'+segBtns('tz',[['show','Show'],['hide','Hide']],chart.tz==='hide'?'hide':'show')+'</div></div>';
   h+='<nav class="dbsteps" aria-label="Planner steps">'+steps.map(([k,l],j)=>'<button type="button" data-act="b-go" data-step="'+esc(k)+'" class="'+(j===cur?'on':j<cur?'done':'')+'"'+(j===cur?' aria-current="step"':'')+'>'+esc(l)+'</button>').join('')+'</nav>';
   if(dbErr) h+='<p class="err" role="alert">'+esc(dbErr)+'</p>';
   if(st==='summary') maybeDonate();
