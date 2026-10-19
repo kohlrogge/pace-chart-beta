@@ -321,7 +321,7 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 /* visual bag + item pictures */
 .ico{display:block;width:100%;height:100%;overflow:visible}
 .ico *{fill:none;stroke:#0b2a33;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
-.ico .t{fill:var(--teal)}.ico .p{fill:var(--purple)}.ico .m{fill:var(--mint)}.ico .y{fill:#f2b632}.ico .w{fill:var(--white)}.ico .r{fill:#d6453d}.ico .k{fill:#f4b4c2}.ico .d{fill:#1d2b30}.ico .g{fill:#c4d3d5}
+.ico .t{fill:var(--teal)}.ico .p{fill:var(--purple)}.ico .m{fill:var(--mint)}.ico .y{fill:#f2b632}.ico .w{fill:var(--white)}.ico .r{fill:#d6453d}.ico .k{fill:#f4b4c2}.ico .d{fill:#1d2b30}.ico .g{fill:#c4d3d5}.ico .s{fill:#f6c9a8}
 .fun{display:flex;flex-direction:column;gap:18px}
 @media (min-width:860px){.fun{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.25fr);gap:24px;align-items:start}.sackcol{position:sticky;top:12px}}
 .sackcol{position:sticky;top:0;z-index:6;background:var(--surface);padding-block:40px 6px}
@@ -1616,6 +1616,7 @@ const ICONS={
   firstaid:'<rect class="w" x="6" y="13" width="36" height="27" rx="4"/><path d="M18 13V9a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4"/><path class="r" d="M21 18h6v5h5v6h-5v5h-6v-5h-5v-6h5z"/>',
   femcare:'<path class="k" d="M5 15l3-3 3 3 3-3 3 3 3-3 3 3 3-3 3 3 3-3 3 3 3-3 3 3v18l-3 3-3-3-3 3-3-3-3 3-3-3-3 3-3-3-3 3-3-3-3 3-3-3z"/><path class="p" d="M24 31c-6-4-8-7-8-9.5a4 4 0 0 1 8-1.5 4 4 0 0 1 8 1.5c0 2.5-2 5.5-8 9.5z"/>',
   kttape:'<path class="k" d="M24 30h18l3 8H24z"/><circle class="k" cx="20" cy="24" r="14"/><circle class="w" cx="20" cy="24" r="6"/>',
+  gnome:'<path class="m" d="M6 44c4-3 8-3 12 0 4-3 8-3 12 0 4-3 8-3 12 0"/>'+'<ellipse class="s" cx="19.5" cy="42" rx="3.2" ry="2"/><ellipse class="s" cx="28.5" cy="42" rx="3.2" ry="2"/>'+'<path class="s" d="M15 35c0-6 4-9 9-9s9 3 9 9c0 4-4 6-9 6s-9-2-9-6z"/>'+'<path class="y" d="M17.5 20c-3 3-3.5 8-2 12M30.5 20c3 3 3.5 8 2 12" style="stroke:#c98a12;stroke-width:3.4"/>'+'<circle class="s" cx="24" cy="21.5" r="6.5"/>'+'<path class="r" d="M15.5 19.5L24 3l8.5 16.5c-5 1.6-12 1.6-17 0z"/>'+'<circle class="d" cx="21.5" cy="22" r=".8" style="stroke-width:1"/><circle class="d" cx="26.5" cy="22" r=".8" style="stroke-width:1"/>'+'<path d="M22.5 25c1 .8 2 .8 3 0" style="stroke-width:1.4"/>'+'<circle class="k" cx="19.8" cy="24.2" r="1.4" style="stroke:none"/><circle class="k" cx="28.2" cy="24.2" r="1.4" style="stroke:none"/>'+'<path class="m" d="M24 41c-6-1.5-7-8-2-12 4.5 2.5 6 9 2 12z"/><path d="M23.6 40c-.4-3-.3-6 .1-9" style="stroke-width:1.2"/>',
   tag:'<path class="y" d="M7 15h22l12 9-12 9H7z"/><circle class="w" cx="31" cy="24" r="2.5"/><path d="M12 22h10M12 27h7"/>'
 };
 const ICON_OF={musher:'jar',sanitizer:'pump',socks:'sock',wipes:'wipes',bra:'bra',shirt:'shirt',tshirt:'tee',longsleeve:'longsleeve',shorts:'shorts',tights:'tights',
