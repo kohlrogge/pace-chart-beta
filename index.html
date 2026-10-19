@@ -189,9 +189,10 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .legbox .lh{font-family:var(--label);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
 @media (max-width:560px){.cond.leg{grid-template-columns:1fr}.cond.leg>.legbox{grid-column:1;grid-row:auto;margin-top:6px}}
 .legs{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
-.legs li{display:flex;flex-direction:column;gap:1px;padding:6px 12px;border-radius:8px;border:1px solid var(--grey);font-size:.78rem;color:var(--muted);min-width:96px}
-.legs li b{font-family:var(--display);font-size:1rem;color:var(--ink);white-space:nowrap}
-.legs li.slow{background:var(--accent-soft);border-color:var(--teal);color:var(--teal);font-weight:700}
+.legs .leg{display:flex;flex-direction:column;align-items:flex-start;gap:1px;padding:6px 12px;border-radius:8px;border:2px solid var(--grey);background:var(--white);font-size:.78rem;color:var(--muted);min-width:96px;text-align:left}
+.legs .leg:hover{border-color:var(--teal)}
+.legs .leg b{font-family:var(--display);font-size:1rem;color:var(--ink);white-space:nowrap}
+.legs .leg.slow{background:var(--accent-soft);border-color:var(--teal);color:var(--teal);font-weight:700}
 .cond.dark{background:#1b1630;color:var(--white)}
 .cond.dark .eyebrow,.cond.dark small{color:rgba(255,255,255,.78)}
 .dbgrid{display:grid;gap:20px;grid-template-columns:minmax(0,1fr);grid-template-areas:"sug" "bag" "lib"}
@@ -930,14 +931,18 @@ function dbCtx(R,bags,k){
   if(b.kind!=='finish'){
     const nx=bags[k+1], nw=dbWin(R,nx.i);
     Object.assign(ctx,{next:nx,nw,from:w.early,to:nw.late,nextName:nx.kind==='finish'?'the finish':nx.name,nextBag:nx.kind==='finish'?'the finish':nx.name+' drop bag'});
-    // Time for this stretch in each column. Suggestions use the slowest one.
-    ctx.legs=R.plans.map(p=>({label:p.label,mins:p.times[nx.i]-p.times[b.i]}));
-    ctx.legs.push({label:chart.labels.cut,mins:R.rows[nx.i].cut-R.rows[b.i].cut,cut:true});
+    // Time for this stretch in each column. The runner picks which one to plan around (default: the slowest).
+    ctx.legs=R.plans.map(p=>({label:p.label,from:p.times[b.i],to:p.times[nx.i]}));
+    ctx.legs.push({label:chart.labels.cut,from:R.rows[b.i].cut,to:R.rows[nx.i].cut,cut:true});
+    ctx.legs.forEach(l=>l.mins=l.to-l.from);
     ctx.slow=ctx.legs.reduce((a,c)=>c.mins>=a.mins?c:a);
-    ctx.mins=ctx.slow.mins; ctx.hours=ctx.mins/60; ctx.wx=dbWx(ctx.from,ctx.to);
+    const pick=(bp.bags[b.key]||{}).col;
+    ctx.sel=ctx.legs.find(l=>l.label===pick)||ctx.slow;
+    ctx.from=ctx.sel.from; ctx.to=ctx.sel.to;
+    ctx.mins=ctx.sel.mins; ctx.hours=ctx.mins/60; ctx.wx=dbWx(ctx.from,ctx.to);
     ctx.miNext=R.rows[nx.i].dist-R.rows[b.i].dist;
     // If she could reach this bag after dark, the stretch before it already told her to carry a headlamp.
-    ctx.hasLamp=k>0&&isDark(w.late);
+    ctx.hasLamp=k>0&&isDark(ctx.from);
     ctx.needLamp=ctx.wx.darkMin>0&&!ctx.hasLamp;
     ctx.gap=null;
     for(let j=b.i;j<nx.i;j++){const d=R.rows[j+1].dist-R.rows[j].dist; if(!ctx.gap||d>ctx.gap.mi) ctx.gap={mi:d,from:R.rows[j].first?'the start':R.rows[j].name,to:R.rows[j+1].last?'the finish':R.rows[j+1].name};}
@@ -948,7 +953,7 @@ function dbCtx(R,bags,k){
 function dbSuggest(b,ctx){
   const out=[], add=(id,qty,why)=>{ if(!out.some(o=>o.id===id)) out.push({id,name:DB_BYID[id].name,qty:qty||'',why}); };
   if(b.kind==='finish'){ ['dryshoes','drysocks','change','hoodie'].forEach(id=>add(id,'','For after you finish')); return out; }
-  const x=ctx.wx, h=ctx.hours, span=fmtHrs(ctx.mins)+' to '+ctx.nextBag+' at '+ctx.slow.label+' pace';
+  const x=ctx.wx, h=ctx.hours, span=fmtHrs(ctx.mins)+' to '+ctx.nextBag+' at '+ctx.sel.label+' pace';
   ['musher','sanitizer','socks','wipes'].forEach(id=>add(id,'','Foot care kit, every bag'));
   add('salt','1 small bag','Every bag');
   add('tums','','Every bag');
@@ -1122,8 +1127,8 @@ function dbBagView(R,bags,k){
     h+='<div class="cond leg"><span class="eyebrow">To '+esc(ctx.nextBag)+'</span>'+
        '<span class="v num">'+dShow(ctx.miNext).toFixed(1)+' '+uLabel()+'</span>'+
        '<small class="ai">Next aid station: '+esc(ctx.aidName)+', '+dShow(ctx.miAid).toFixed(1)+' '+uLabel()+'</small>'+
-       '<div class="legbox"><span class="lh">Time to get to next drop bag based on:</span><ul class="legs">'+ctx.legs.map(l=>'<li'+(l===ctx.slow?' class="slow"':'')+'><span>'+esc(l.label)+'</span><b class="num">'+fmtHrs(l.mins)+'</b></li>').join('')+'</ul>'+
-       '<small class="pk">Suggestions use the slowest time: <b>'+esc(ctx.slow.label)+'</b></small></div></div>';
+       '<div class="legbox"><span class="lh">Time to get to next drop bag based on:</span><div class="legs" role="group" aria-label="Plan this bag around">'+ctx.legs.map(l=>'<button type="button" class="leg'+(l===ctx.sel?' slow':'')+'" data-act="b-col" data-col="'+esc(l.label)+'" aria-pressed="'+(l===ctx.sel)+'"><span>'+esc(l.label)+(l===ctx.slow?' · slowest':'')+'</span><b class="num">'+fmtHrs(l.mins)+'</b></button>').join('')+'</div>'+
+       '<small class="pk">Tap a time to plan this bag around it. The weather, darkness, and calories on this screen use <b>'+esc(ctx.sel.label)+'</b>.</small></div></div>';
     h+=cond('Temperature',fmtT(x.lo)+' to '+fmtT(x.hi),'Low and high before '+esc(ctx.nextName));
     h+=cond('Rain','Up to '+x.rain+'%','Highest chance before '+esc(ctx.nextName));
     h+=cond('Sun',x.events.length?esc(x.events.map(evText).join(', ')):(x.darkMin>0?'Dark':'Daylight'),x.events.length?'Before '+esc(ctx.nextName):'The whole way to '+esc(ctx.nextName),!x.events.length&&x.darkMin>0?'dark':'');
@@ -1133,6 +1138,14 @@ function dbBagView(R,bags,k){
   const sugg=dbSuggest(b,ctx), have=new Set(bag.items.map(it=>it.id)), dis=new Set(bag.dismissed);
   // Warnings: things she really shouldn't leave this bag without. Each turns green once its items are in the bag.
   const alerts=[], x=ctx.wx;
+  const calS=sugg.find(q=>q.id==='cal');
+  if(calS){
+    const it=bag.items.find(q=>q.id==='cal'), rec=calNum(calS.qty), got=it?calNum(it.qty):0;
+    const j=bag.items.indexOf(it);
+    alerts.push({items:['cal'],ico:'cal',short:!!it&&got<rec,todo:'Pack at least '+calS.qty+'.',done:'Calories packed: '+calQty(got)+'.',
+      btn:it&&got<rec?'<button type="button" class="btn sm" data-act="b-calrec" data-j="'+j+'" data-v="'+rec+'">Use '+esc(calS.qty)+'</button>':'',
+      why:'That\'s 200 per hour for '+fmtHrs(ctx.mins)+' to '+ctx.nextBag+' at '+ctx.sel.label+' pace.'+(it&&got<rec?' That\'s less than the recommended '+calS.qty+'.':'')});
+  }
   if(ctx.needLamp){
     const ss=x.events.find(e=>e.type==='sunset');
     alerts.push({items:['headlamp','batteries'],ico:'headlamp',todo:'Pack a headlamp.',done:'Headlamp packed.',
@@ -1150,19 +1163,19 @@ function dbBagView(R,bags,k){
       why:'It could reach '+fmtT(x.hi)+' before '+ctx.nextBag+'. Pack extra salt and room to carry more fluids, like an extra bottle or flask.'});
   }
   if(ctx.gap&&ctx.gap.mi>8){
-    alerts.push({items:['cal','bottle'],ico:'cal',todo:'Long gap between aid stations.',done:'Ready for the long gap.',
+    alerts.push({items:['bottle'],ico:'bottle',todo:'Long gap between aid stations.',done:'Ready for the long gap.',
       why:'There\'s '+dShow(ctx.gap.mi).toFixed(1)+' '+uLabel()+' between '+ctx.gap.from+' and '+ctx.gap.to+' with no aid. Carry extra calories, and room for more fluids, like an extra bottle or flask.'});
   }
   const MUST=new Set(); alerts.forEach(a=>a.items.forEach(id=>MUST.add(id)));
   const open=sugg.filter(s=>!have.has(s.id)&&!dis.has(s.id)).sort((a,b)=>MUST.has(b.id)-MUST.has(a.id)), nDis=sugg.filter(s=>dis.has(s.id)&&!have.has(s.id)).length;
   alerts.forEach(a=>{
-    const missing=a.items.filter(id=>!have.has(id)), packed=!missing.length;
+    const missing=a.items.filter(id=>!have.has(id)), packed=!missing.length&&!a.short;
     const names=missing.map(id=>(DB_BYID[id]||{name:id}).name.toLowerCase());
-    h+='<div class="alert'+(packed?' ok':'')+'" role="status"><span class="aico">'+icon(a.ico)+'</span><div><b>'+esc(packed?a.done:a.todo)+'</b> '+esc(a.why)+
-       (!packed&&missing.length<a.items.length?' Still missing: '+esc(names.join(', '))+'.':'')+'</div></div>';
+    h+='<div class="alert'+(packed?' ok':'')+'" role="status"><span class="aico">'+icon(a.ico)+'</span><div><b>'+esc(packed||a.short?a.done:a.todo)+'</b> '+esc(a.why)+
+       (!packed&&missing.length&&missing.length<a.items.length?' Still missing: '+esc(names.join(', '))+'.':'')+(a.btn?' '+a.btn:'')+'</div></div>';
   });
   if(!ctx.needLamp&&ctx.hasLamp&&x.darkMin>0){
-    h+='<div class="alert info" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>Headlamp check.</b> '+(isDark(w.early)?'You\'ll arrive in the dark, so your headlamp should already be on.':'You may arrive after dark, so you should already be carrying your headlamp from your last bag.')+' There\'s up to '+esc(fmtHrs(x.darkMin))+' more of darkness before '+esc(ctx.nextBag)+'. '+
+    h+='<div class="alert info" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>Headlamp check.</b> '+'At '+esc(ctx.sel.label)+' pace you\'ll arrive after dark, so your headlamp should already be on.'+' There\'s up to '+esc(fmtHrs(x.darkMin))+' more of darkness before '+esc(ctx.nextBag)+'. '+
        'Will your batteries last that long? If not, pack spares in this bag. Pack a spare headlamp only if yours might fail or be left behind.</div></div>';
   }
 
@@ -1227,7 +1240,7 @@ function dbBagView(R,bags,k){
          '<input class="in num" id="db-q'+j+'" data-cal="'+j+'" inputmode="numeric" autocomplete="off" value="'+(v?v.toLocaleString('en-US'):'')+'" aria-label="Calories">'+
          '<button type="button" class="btn sm" data-act="b-cal" data-j="'+j+'" data-d="100" aria-label="100 more calories">+</button></div>'+
          '<button type="button" class="rm" data-act="b-rm" data-j="'+j+'" aria-label="Remove '+esc(it.name)+'">×</button></div>';
-      if(rv) h+='<p class="calrec">Recommended <b class="num">'+esc(calRec)+'</b>: 200 per hour for '+fmtHrs(ctx.mins)+' at '+esc(ctx.slow.label)+' pace'+(v!==rv?' <button type="button" class="linkbtn" data-act="b-calrec" data-j="'+j+'" data-v="'+rv+'">Use recommended</button>':'')+'</p>';
+      if(rv) h+='<p class="calrec">Recommended <b class="num">'+esc(calRec)+'</b>: 200 per hour for '+fmtHrs(ctx.mins)+' at '+esc(ctx.sel.label)+' pace'+(v!==rv?' <button type="button" class="linkbtn" data-act="b-calrec" data-j="'+j+'" data-v="'+rv+'">Use recommended</button>':'')+'</p>';
       h+='</div>';
       return;
     }
@@ -1284,6 +1297,7 @@ function dbAct(a,btn){
     if(a==='b-addall'){sugg.forEach(s=>{if(!have.has(s.id)&&!bag.dismissed.includes(s.id)){bag.items.push({id:s.id,name:s.name,qty:s.qty});dbNew.add(s.id)}});}
     if(a==='b-dismiss'){if(!bag.dismissed.includes(btn.dataset.id)) bag.dismissed.push(btn.dataset.id);}
     if(a==='b-restore'){bag.dismissed=[];}
+    if(a==='b-col'){bag.col=btn.dataset.col;}
     if(a==='b-rm'){bag.items.splice(+btn.dataset.j,1);}
     if(a==='b-cal'){const it=bag.items[+btn.dataset.j]; if(it) it.qty=calQty(calNum(it.qty)+(+btn.dataset.d));}
     if(a==='b-calrec'){const it=bag.items[+btn.dataset.j]; if(it) it.qty=calQty(+btn.dataset.v);}
