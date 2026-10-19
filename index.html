@@ -1184,7 +1184,7 @@ function dbBagView(R,bags,k){
     const must=MUST.has(s.id);
     h+='<div class="tilewrap"><button type="button" class="tile sug'+(must?' must':'')+'" data-drag data-act="b-add" data-id="'+s.id+'" title="'+esc(s.why)+'">'+
        '<span class="tico">'+icon(s.id)+'</span><span class="tnm">'+esc(s.name)+'</span>'+(s.qty&&s.id==='cal'?'<span class="tqty">'+esc(s.qty)+'</span>':'')+
-       (must?'<span class="mustb">Must have</span>':'')+'<span class="twhy">'+esc(s.why)+'</span></button>'+
+       (must?'<span class="mustb">Recommended</span>':'')+'<span class="twhy">'+esc(s.why)+'</span></button>'+
        '<button type="button" class="tx" data-act="b-dismiss" data-id="'+s.id+'" aria-label="Skip '+esc(s.name)+'">×</button></div>';
   });
   h+='</div>';
