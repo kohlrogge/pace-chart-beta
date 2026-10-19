@@ -874,7 +874,7 @@ function bpLoad(){try{const s=localStorage.getItem(BKEY);return s?JSON.parse(s):
 function bpSave(){try{localStorage.setItem(BKEY,JSON.stringify(bp))}catch(e){}}
 let bp=Object.assign(bpFresh(),bpLoad()||{});
 (function(){const ren={via:['coffee','Instant coffee packet']},old={'Starbucks Via':1,'Spare batteries or charging cable':1,'Dry shoes':1,'Dry socks':1,'Buff':1};
-  Object.values(bp.bags||{}).forEach(bg=>(bg.items||[]).forEach(it=>{ if(ren[it.id]){[it.id,it.name]=ren[it.id]} else if(old[it.name]&&DB_BYID[it.id]) it.name=DB_BYID[it.id].name; }));})();
+  Object.values(bp.bags||{}).forEach(bg=>(bg.items||[]).forEach(it=>{ if(it.id==='tums'&&/dose/.test(it.qty||'')) it.qty=''; if(ren[it.id]){[it.id,it.name]=ren[it.id]} else if(old[it.name]&&DB_BYID[it.id]) it.name=DB_BYID[it.id].name; }));})();
 let dbErr='';
 const stKey=s=>s.name+'@'+(+s.dist).toFixed(2);
 function bagOf(key){return bp.bags[key]||(bp.bags[key]={items:[],dismissed:[]})}
@@ -939,8 +939,7 @@ function dbSuggest(b,ctx){
   const x=ctx.wx, h=ctx.hours, span=fmtHrs(ctx.mins)+' to '+ctx.nextName+' at '+ctx.slow.label+' pace';
   ['musher','sanitizer','socks','wipes'].forEach(id=>add(id,'','Foot care kit, every bag'));
   add('salt','1 jewelry bag','Every bag');
-  const tums=Math.max(1,Math.ceil(h/4));
-  add('tums',tums+(tums===1?' dose':' doses'),'1 dose per 4 hours, '+span);
+  add('tums','','Every bag');
   add('cal',(Math.ceil(200*h/50)*50).toLocaleString('en-US')+' cal','200 per hour, '+span);
   add('tylenol','','Optional, every bag');
   ['chafe','lipbalm','trash'].forEach(id=>add(id,'','Every bag'));
