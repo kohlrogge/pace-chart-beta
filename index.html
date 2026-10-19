@@ -273,7 +273,6 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .locbox h3{font-size:1.15rem}
 .locbox .preview{margin:0}
 .locset{margin:4px 0 0}
-.raceloc{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--grey);padding-top:12px}
 .geohits{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
 .coordrows{display:flex;flex-direction:column;gap:8px;margin-top:8px}
 .coordrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,15rem) 5.5rem;gap:4px 8px;align-items:center}
@@ -890,7 +889,6 @@ function finishWizard(){
   bp.locs=bp.locs||{}; bp.locText=bp.locText||{};
   wiz.rows.forEach((r,i)=>{ const st=b.stations[i]; if(!st) return; const k=stKey(st); if(okLoc(bp.locs[k])) return;
     if(r.lat!=null&&r.lon!=null) bp.locs[k]={name:r.lat.toFixed(3)+', '+r.lon.toFixed(3),lat:r.lat,lon:r.lon}; else if(r.place) bp.locText[k]=r.place; });
-  if(!okLoc(bp.loc)){ const f=wiz.rows.find(r=>r.lat!=null&&r.lon!=null); if(f) bp.loc={name:f.lat.toFixed(3)+', '+f.lon.toFixed(3),lat:f.lat,lon:f.lon}; }
   save(); bpSave(); view=chart.manual?'bags':'chart'; if(chart.manual&&wiz.isNew) bp.step='pick'; wiz=null; render(); window.scrollTo(0,0);
 }
 
@@ -1184,8 +1182,8 @@ function hasWx(){ return !!(bp.wx&&bp.wx.locs&&bp.wx.locs.race&&!bp.wx.err); }
 function locAtDist(d){
   if(!hasWx()) return null;
   let best=null, bd=Infinity;
-  // Nearest aid station wins; one without its own location stands for the race location.
-  (chart.stations||[]).forEach(s=>{ const dd=Math.abs(s.dist-d); if(dd<bd){bd=dd;best=bp.wx.locs['s:'+stKey(s)]||bp.wx.locs.race;} });
+  // The nearest aid station that has its own location wins.
+  (chart.stations||[]).forEach(s=>{ const L=bp.wx.locs['s:'+stKey(s)], dd=Math.abs(s.dist-d); if(L&&dd<bd){bd=dd;best=L;} });
   return best||bp.wx.locs.race;
 }
 function sunOf(el){ const L=curLoc&&curLoc.sun&&curLoc.sun[mdKey(elDate(el))]; return L?{rise:L[0],set:L[1]}:{rise:SAMPLE_SUNRISE,set:SAMPLE_SUNSET}; }
@@ -1211,7 +1209,7 @@ function dbWx(from,to,d0,d1){
 function evText(ev){const c=clockParts(ev.el);return (ev.type==='sunset'?'Sunset ':'Sunrise ')+dayLabel(c.day)+' '+fmtClock12(ev.at)}
 
 // What to fetch: the race location plus every aid station the runner gave a location.
-function raceLoc(){ if(okLoc(bp.loc)) return bp.loc; return chart&&chart.stations?chart.stations.map(st=>(bp.locs||{})[stKey(st)]).find(okLoc)||null:null; }
+function raceLoc(){ const f=chart&&chart.stations?chart.stations.map(st=>(bp.locs||{})[stKey(st)]).find(okLoc):null; return f||(okLoc(bp.loc)?bp.loc:null); }
 function wxPlan(){
   const RL=raceLoc();
   if(!chart||!chart.startDate||!RL) return null;
@@ -1318,7 +1316,6 @@ async function resolvePending(){
       if(hits.length){ bp.locs[k]=hits[0]; if(hits.length>1) stGeo[k]={alts:hits.slice(1)}; delete bp.locText[k]; }
       else stGeo[k]={err:'No place found for "'+bp.locText[k]+'". Try a nearby town, or paste GPS coordinates.'};
     }catch(e){ break; } }
-  if(!okLoc(bp.loc)){ const f=chart.stations.map(st=>bp.locs[stKey(st)]).find(okLoc); if(f) bp.loc=Object.assign({},f); }
   pendBusy=false; bpSave(); render(); loadWx();
 }
 
@@ -1328,7 +1325,7 @@ function wxBanner(){
   if(wxBusy) return '<div class="banner"><p><b>Getting the weather...</b></p></div>';
   if(bp.wx&&bp.wx.err) return '<div class="banner"><p><b>'+esc(bp.wx.err)+'</b> Conditions below are a sample day until it loads.</p><button type="button" class="btn sm" data-act="b-wx">Try again</button></div>';
   if(!hasWx()) return '<div class="banner"><p>Weather hasn\'t loaded yet.</p><button type="button" class="btn sm" data-act="b-wx">Get weather</button></div>';
-  const n=Object.keys(bp.wx.locs).length-1, where=okLoc(bp.loc)?(n?esc(bp.loc.name)+' and '+n+' aid station location'+(n>1?'s':''):esc(bp.loc.name)):n+' aid station location'+(n>1?'s':'');
+  const n=Math.max(1,Object.keys(bp.wx.locs).length-1), where=n>1?'your '+n+' locations':esc(raceLoc().name);
   const at=new Date(bp.wx.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
   if(bp.wx.kind==='forecast') return '<div class="banner"><p><b>Forecast for '+where+'</b>, updated '+esc(at)+'. Forecasts change, so check again the day before you pack.</p><button type="button" class="btn sm" data-act="b-wx">Refresh</button></div>';
   const ys=(bp.wx.locs.race.years||[]);
@@ -1349,18 +1346,9 @@ function stLocRow(s,i){
 function dbLocBox(){
   const picked=new Set(bp.picks||[]), st=chart.stations, last=st.length-1;
   let h='<div class="locbox"><h3>Where are your drop bags?</h3>'+
-    '<p class="preview">Give each drop bag station a nearby town or its GPS coordinates. The weather and daylight for each stretch come from the closest location, which matters on long courses where the weather changes along the way. Only locations and dates are sent to the weather service.</p>';
+    '<p class="preview">Give the start and each drop bag station a nearby town or its GPS coordinates. Any aid station without one uses the closest one you set. The weather and daylight for each stretch come from the closest location, which matters on long courses where the weather changes along the way. Only locations and dates are sent to the weather service.</p>';
   const rows=st.map((s,i)=>i===0||picked.has(stKey(s))?stLocRow(s,i):'').join('');
   h+='<div class="coordrows">'+(picked.size?rows:'<p class="preview">Check your drop bag stations above, and they\'ll show up here.</p>')+'</div>';
-  // Race location: the fallback for every station without its own.
-  h+='<div class="raceloc"><div><b>Race location</b> <span class="muted">(used for any aid station without its own)</span></div>';
-  if(okLoc(bp.loc)) h+='<p class="locset">'+esc(bp.loc.name)+' '+(parseLatLon(bp.loc.name)?'':'<span class="muted num">('+bp.loc.lat.toFixed(3)+', '+bp.loc.lon.toFixed(3)+')</span>')+' <button type="button" class="linkbtn" data-act="b-locclear">Change</button></p>';
-  else {
-    h+='<div class="addrow"><input class="in" id="db-geo" placeholder="Town near the race, or GPS like 36.54, -84.70" autocomplete="off"><button type="button" class="btn" data-act="b-geo"'+(geoBusy?' disabled':'')+'>'+(geoBusy?'Searching...':'Search')+'</button></div>';
-    if(geoErr) h+='<p class="err" role="alert">'+esc(geoErr)+'</p>';
-    if(geoHits&&geoHits.length) h+='<div class="geohits">'+geoHits.map((g,i)=>'<button type="button" class="btn" data-act="b-geopick" data-i="'+i+'">'+esc(g.name)+'</button>').join('')+'</div>';
-  }
-  h+='</div>';
   const others=st.map((s,i)=>i!==0&&!picked.has(stKey(s))?stLocRow(s,i):'').join(''), nOther=st.filter((s,i)=>i!==0&&!picked.has(stKey(s))&&okLoc((bp.locs||{})[stKey(s)])).length;
   h+='<details class="paste"'+(nOther?' open':'')+'><summary>Other aid stations (optional)'+(nOther?' · '+nOther+' set':'')+'</summary><p class="preview">More locations make the weather between drop bags more accurate.</p><div class="coordrows">'+others+'</div></details>';
   h+='<details class="paste"'+(pasteErr?' open':'')+'><summary>Paste coordinates for every aid station</summary><p class="preview">One aid station per line, in race order, with latitude and longitude, like <span class="num">Pickett, 36.55, -84.80</span>. You can paste straight from a spreadsheet.</p>'+
