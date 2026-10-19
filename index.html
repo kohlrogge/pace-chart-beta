@@ -960,7 +960,9 @@ function dbSuggest(b,ctx){
   if(x.lo<55) add('lightlayer','',lo);
   if(x.lo<40) ['beanie','gloves','extralayer','tights'].forEach(id=>add(id,'',lo));
   if(x.lo<35) add('jacket','',lo);
-  if(x.hi>80) ['sunscreen','hat','icebandana','extrasalt'].forEach(id=>add(id,'','High of '+fmtT(x.hi)));
+  if(ctx.gap&&ctx.gap.mi>8) add('bottle','','No aid for '+dShow(ctx.gap.mi).toFixed(1)+' '+uLabel()+' between '+ctx.gap.from+' and '+ctx.gap.to);
+  if(x.hi>75) ['extrasalt','bottle'].forEach(id=>add(id,'','High of '+fmtT(x.hi)+' before '+ctx.nextBag));
+  if(x.hi>80) ['sunscreen','hat','icebandana'].forEach(id=>add(id,'','High of '+fmtT(x.hi)));
   if(x.rain>=40) ['rainjacket','zipbag'].forEach(id=>add(id,'','Up to '+x.rain+'% chance of rain'));
   if(ctx.needLamp) ['headlamp','batteries','backuplight'].forEach(id=>add(id,'','About '+fmtHrs(x.darkMin)+' in the dark before '+ctx.nextBag));
   else if(x.darkMin>0) add('batteries','','Fresh batteries in case yours run low before '+ctx.nextBag);
@@ -1142,9 +1144,13 @@ function dbBagView(R,bags,k){
     alerts.push({items:['lightlayer'],ico:'lightlayer',todo:'Pack a layer.',done:'Layer packed.',
       why:'It could drop to '+fmtT(x.lo)+' before '+ctx.nextBag+'. Bring a layer you can put on as it cools off.'});
   }
+  if(x&&x.hi>75){
+    alerts.push({items:['extrasalt','bottle'],ico:'bottle',todo:'Hot stretch ahead.',done:'Ready for the heat.',
+      why:'It could reach '+fmtT(x.hi)+' before '+ctx.nextBag+'. Pack extra salt and room to carry more fluids, like an extra bottle or flask.'});
+  }
   if(ctx.gap&&ctx.gap.mi>8){
-    alerts.push({items:['cal'],ico:'cal',todo:'Long gap between aid stations.',done:'Calories packed for the long gap.',
-      why:'There\'s '+dShow(ctx.gap.mi).toFixed(1)+' '+uLabel()+' between '+ctx.gap.from+' and '+ctx.gap.to+' with no aid. Carry extra calories and fluids for that stretch.'});
+    alerts.push({items:['cal','bottle'],ico:'cal',todo:'Long gap between aid stations.',done:'Ready for the long gap.',
+      why:'There\'s '+dShow(ctx.gap.mi).toFixed(1)+' '+uLabel()+' between '+ctx.gap.from+' and '+ctx.gap.to+' with no aid. Carry extra calories, and room for more fluids, like an extra bottle or flask.'});
   }
   const MUST=new Set(); alerts.forEach(a=>a.items.forEach(id=>MUST.add(id)));
   const open=sugg.filter(s=>!have.has(s.id)&&!dis.has(s.id)).sort((a,b)=>MUST.has(b.id)-MUST.has(a.id)), nDis=sugg.filter(s=>dis.has(s.id)&&!have.has(s.id)).length;
