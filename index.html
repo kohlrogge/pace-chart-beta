@@ -183,6 +183,15 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .cond{background:var(--white);outline:1px solid var(--grey);padding:12px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
 .cond .v{font-family:var(--display);font-weight:700;font-size:1.05rem;line-height:1.25}
 .cond small{color:var(--muted);font-size:.82rem}
+.cond.leg{order:9;grid-column:1/-1;display:grid;grid-template-columns:minmax(150px,auto) minmax(0,1fr);gap:4px 24px;align-items:start}
+.cond.leg>.eyebrow,.cond.leg>.v,.cond.leg>small.ai{grid-column:1}
+.cond.leg>.legs{grid-column:2;grid-row:1/span 4}
+.cond.leg>small.pk{grid-column:2}
+@media (max-width:560px){.cond.leg{grid-template-columns:1fr}.cond.leg>.legs,.cond.leg>small.pk{grid-column:1;grid-row:auto}}
+.legs{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
+.legs li{display:flex;flex-direction:column;gap:1px;padding:6px 12px;border-radius:8px;border:1px solid var(--grey);font-size:.78rem;color:var(--muted);min-width:96px}
+.legs li b{font-family:var(--display);font-size:1rem;color:var(--ink);white-space:nowrap}
+.legs li.slow{background:var(--accent-soft);border-color:var(--teal);color:var(--teal);font-weight:700}
 .cond.dark{background:#1b1630;color:var(--white)}
 .cond.dark .eyebrow,.cond.dark small{color:rgba(255,255,255,.78)}
 .dbgrid{display:grid;gap:20px;grid-template-columns:minmax(0,1fr);grid-template-areas:"sug" "bag" "lib"}
@@ -914,14 +923,20 @@ function dbCtx(R,bags,k){
   if(b.kind!=='finish'){
     const nx=bags[k+1], nw=dbWin(R,nx.i);
     Object.assign(ctx,{next:nx,nw,from:w.early,to:nw.late,nextName:nx.kind==='finish'?'the finish':nx.name});
-    ctx.mins=ctx.to-ctx.from; ctx.hours=ctx.mins/60; ctx.wx=dbWx(ctx.from,ctx.to);
+    // Time for this stretch in each column. Suggestions use the slowest one.
+    ctx.legs=R.plans.map(p=>({label:p.label,mins:p.times[nx.i]-p.times[b.i]}));
+    ctx.legs.push({label:chart.labels.cut,mins:R.rows[nx.i].cut-R.rows[b.i].cut,cut:true});
+    ctx.slow=ctx.legs.reduce((a,c)=>c.mins>=a.mins?c:a);
+    ctx.mins=ctx.slow.mins; ctx.hours=ctx.mins/60; ctx.wx=dbWx(ctx.from,ctx.to);
+    ctx.miNext=R.rows[nx.i].dist-R.rows[b.i].dist;
+    const na=R.rows[b.i+1]; ctx.aidName=na.last?'the finish':na.name; ctx.miAid=na.dist-R.rows[b.i].dist;
   }
   return ctx;
 }
 function dbSuggest(b,ctx){
   const out=[], add=(id,qty,why)=>{ if(!out.some(o=>o.id===id)) out.push({id,name:DB_BYID[id].name,qty:qty||'',why}); };
   if(b.kind==='finish'){ ['dryshoes','drysocks','change','hoodie'].forEach(id=>add(id,'','For after you finish')); return out; }
-  const x=ctx.wx, h=ctx.hours, span='up to '+fmtHrs(ctx.mins)+' until '+ctx.nextName;
+  const x=ctx.wx, h=ctx.hours, span=fmtHrs(ctx.mins)+' to '+ctx.nextName+' at '+ctx.slow.label+' pace';
   ['musher','sanitizer','socks','wipes'].forEach(id=>add(id,'','Foot care kit, every bag'));
   add('salt','1 jewelry bag','Every bag');
   const tums=Math.max(1,Math.ceil(h/4));
@@ -1088,7 +1103,11 @@ function dbBagView(R,bags,k){
   }
   if(b.kind!=='finish'){
     const x=ctx.wx;
-    h+=cond('Until '+esc(ctx.nextName),'Up to '+fmtHrs(ctx.mins),'Fastest leave to latest arrival');
+    h+='<div class="cond leg"><span class="eyebrow">To '+esc(ctx.nextName)+'</span>'+
+       '<span class="v num">'+dShow(ctx.miNext).toFixed(1)+' '+uLabel()+'</span>'+
+       '<small class="ai">Next aid station: '+esc(ctx.aidName)+', '+dShow(ctx.miAid).toFixed(1)+' '+uLabel()+'</small>'+
+       '<ul class="legs">'+ctx.legs.map(l=>'<li'+(l===ctx.slow?' class="slow"':'')+'><span>'+esc(l.label)+'</span><b class="num">'+fmtHrs(l.mins)+'</b></li>').join('')+'</ul>'+
+       '<small class="pk">Suggestions use the slowest time: <b>'+esc(ctx.slow.label)+'</b></small></div>';
     h+=cond('Temperature',fmtT(x.lo)+' to '+fmtT(x.hi),'Low and high before '+esc(ctx.nextName));
     h+=cond('Rain','Up to '+x.rain+'%','Highest chance before '+esc(ctx.nextName));
     h+=cond('Sun',x.events.length?esc(x.events.map(evText).join(', ')):(x.darkMin>0?'Dark':'Daylight'),x.events.length?'Before '+esc(ctx.nextName):'The whole way to '+esc(ctx.nextName),!x.events.length&&x.darkMin>0?'dark':'');
@@ -1158,7 +1177,7 @@ function dbBagView(R,bags,k){
          '<input class="in num" id="db-q'+j+'" data-cal="'+j+'" inputmode="numeric" autocomplete="off" value="'+(v?v.toLocaleString('en-US'):'')+'" aria-label="Calories">'+
          '<button type="button" class="btn sm" data-act="b-cal" data-j="'+j+'" data-d="100" aria-label="100 more calories">+</button></div>'+
          '<button type="button" class="rm" data-act="b-rm" data-j="'+j+'" aria-label="Remove '+esc(it.name)+'">×</button></div>';
-      if(rv) h+='<p class="calrec">Recommended <b class="num">'+esc(calRec)+'</b>: 200 per hour for up to '+fmtHrs(ctx.mins)+(v!==rv?' <button type="button" class="linkbtn" data-act="b-calrec" data-j="'+j+'" data-v="'+rv+'">Use recommended</button>':'')+'</p>';
+      if(rv) h+='<p class="calrec">Recommended <b class="num">'+esc(calRec)+'</b>: 200 per hour for '+fmtHrs(ctx.mins)+' at '+esc(ctx.slow.label)+' pace'+(v!==rv?' <button type="button" class="linkbtn" data-act="b-calrec" data-j="'+j+'" data-v="'+rv+'">Use recommended</button>':'')+'</p>';
       h+='</div>';
       return;
     }
