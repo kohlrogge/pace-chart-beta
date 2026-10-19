@@ -1194,6 +1194,8 @@ function locAtDist(d){
 function tzAbbr(tz,el){ if(!tz) return ''; try{ const [y,m,d]=(chart.startDate||'2000-01-01').split('-').map(Number), dt=new Date(Date.UTC(y,m-1,d,17)+Math.round(el||0)*60000);
   return new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'short'}).formatToParts(dt).find(p=>p.type==='timeZoneName').value; }catch(e){ return ''; } }
 function tzSfx(tz,el){ const a=tzAbbr(tz,el); return a?' '+a:''; }
+// Race clock: the time zone of the start (or the first drop bag with a location).
+function raceTz(el){ return hasWx()&&bp.wx.locs.race?tzSfx(bp.wx.locs.race.tz,el):''; }
 function wxZones(){ if(!hasWx()) return []; return [...new Set(Object.values(bp.wx.locs).map(l=>tzAbbr(l.tz,0)).filter(Boolean))]; }
 function sunOf(el){ const L=curLoc&&curLoc.sun&&curLoc.sun[mdKey(elDate(el))]; return L?{rise:L[0],set:L[1]}:{rise:SAMPLE_SUNRISE,set:SAMPLE_SUNSET}; }
 function isDark(el){const t=todOf(el), s=sunOf(el);return t<s.rise||t>=s.set}
@@ -1564,9 +1566,9 @@ function dbBagView(R,bags,k){
   // conditions
   h+='<div class="conds">';
   if(b.kind==='start'){
-    h+=cond('You start',esc(clk(0)),isDark(0)?'In the dark':'In daylight',isDark(0)?'dark':'');
+    h+=cond('You start',esc(clk(0)+raceTz(0)),isDark(0)?'In the dark':'In daylight',isDark(0)?'dark':'');
   } else {
-    h+=cond('You arrive',esc(clk(w.early))+'<br>to '+esc(clk(w.late)),esc(w.eLab)+' to '+esc(w.lLab));
+    h+=cond('You arrive',esc(clk(w.early)+raceTz(w.early))+'<br>to '+esc(clk(w.late)+raceTz(w.late)),esc(w.eLab)+' to '+esc(w.lLab));
     const d1=isDark(w.early),d2=isDark(w.late);
     const lightTxt=d1&&d2?'Dark':!d1&&!d2?'Daylight':(d1?'Dark or daylight':'Daylight or dark');
     const lightNote=d1===d2?(d1?'Arriving after dark':'Arriving in daylight'):(!d1?'Sunset '+fmtClock12(sunOf(w.early).set)+(hasWx()&&curLoc?tzSfx(curLoc.tz,w.early):'')+', you may arrive after dark':'Sunrise '+fmtClock12(sunOf(w.late).rise)+(hasWx()&&curLoc?tzSfx(curLoc.tz,w.late):'')+', you may arrive in the dark');
