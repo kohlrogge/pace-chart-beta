@@ -289,6 +289,12 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .tnm{overflow-wrap:anywhere}
 .tqty{font-size:.72rem;color:var(--white);background:var(--teal);border-radius:999px;padding:1px 8px}
 .twhy{font-weight:400;font-size:.7rem;color:var(--muted)}
+.alert{display:flex;gap:12px;align-items:center;background:#fff4d6;border:2px solid #f2b632;border-left-width:8px;border-radius:12px;padding:10px 14px;color:var(--ink)}
+.alert.ok{background:var(--accent-soft);border-color:var(--teal)}
+.alert .aico{width:40px;height:40px;flex:none}
+.alert b{font-family:var(--label)}
+.tile.must{border-color:#f2b632;background:#fff4d6;box-shadow:0 0 0 2px #f2b632}
+.mustb{font-size:.66rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;background:#f2b632;color:var(--black);border-radius:999px;padding:1px 8px}
 .tile.in{cursor:default;opacity:.55;border-style:dashed}
 .tin{font-size:.66rem;color:var(--teal)}
 .tx{position:absolute;top:-6px;right:-6px;width:22px;height:22px;border-radius:50%;border:2px solid var(--grey);background:var(--white);color:var(--muted);font-size:.85rem;line-height:1;padding:0;display:grid;place-items:center}
@@ -1106,7 +1112,7 @@ function dbBagView(R,bags,k){
     h+='<div class="cond leg"><span class="eyebrow">To '+esc(ctx.nextBag)+'</span>'+
        '<span class="v num">'+dShow(ctx.miNext).toFixed(1)+' '+uLabel()+'</span>'+
        '<small class="ai">Next aid station: '+esc(ctx.aidName)+', '+dShow(ctx.miAid).toFixed(1)+' '+uLabel()+'</small>'+
-       '<div class="legbox"><span class="lh">Time to get there</span><ul class="legs">'+ctx.legs.map(l=>'<li'+(l===ctx.slow?' class="slow"':'')+'><span>'+esc(l.label)+'</span><b class="num">'+fmtHrs(l.mins)+'</b></li>').join('')+'</ul>'+
+       '<div class="legbox"><span class="lh">Time to get to next drop bag based on:</span><ul class="legs">'+ctx.legs.map(l=>'<li'+(l===ctx.slow?' class="slow"':'')+'><span>'+esc(l.label)+'</span><b class="num">'+fmtHrs(l.mins)+'</b></li>').join('')+'</ul>'+
        '<small class="pk">Suggestions use the slowest time: <b>'+esc(ctx.slow.label)+'</b></small></div></div>';
     h+=cond('Temperature',fmtT(x.lo)+' to '+fmtT(x.hi),'Low and high before '+esc(ctx.nextName));
     h+=cond('Rain','Up to '+x.rain+'%','Highest chance before '+esc(ctx.nextName));
@@ -1115,7 +1121,15 @@ function dbBagView(R,bags,k){
   h+='</div>';
 
   const sugg=dbSuggest(b,ctx), have=new Set(bag.items.map(it=>it.id)), dis=new Set(bag.dismissed);
-  const open=sugg.filter(s=>!have.has(s.id)&&!dis.has(s.id)), nDis=sugg.filter(s=>dis.has(s.id)&&!have.has(s.id)).length;
+  const MUST=new Set(['headlamp','batteries']);
+  const open=sugg.filter(s=>!have.has(s.id)&&!dis.has(s.id)).sort((a,b)=>(MUST.has(b.id)&&ctx.wx&&ctx.wx.darkMin>0)-(MUST.has(a.id)&&ctx.wx&&ctx.wx.darkMin>0)), nDis=sugg.filter(s=>dis.has(s.id)&&!have.has(s.id)).length;
+  // Darkness before the next drop bag: a headlamp is a must.
+  if(ctx.wx&&ctx.wx.darkMin>0){
+    const ss=ctx.wx.events.find(e=>e.type==='sunset'), packed=have.has('headlamp');
+    const why=ss?'Sunset is at '+fmtClock12(SAMPLE_SUNSET)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.';
+    h+='<div class="alert'+(packed?' ok':'')+'" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>'+(packed?'Headlamp packed.':'Pack a headlamp.')+'</b> '+esc(why)+
+       (packed?(have.has('batteries')?'':' Add headlamp batteries too.'):' Plan on about '+esc(fmtHrs(ctx.wx.darkMin))+' in the dark, so bring headlamp batteries as well.')+'</div></div>';
+  }
 
   h+='<div class="fun">';
   // the bag
@@ -1139,9 +1153,10 @@ function dbBagView(R,bags,k){
   if(!open.length) h+='<p class="preview">'+(sugg.length?'You\'ve handled every suggestion for this bag.':'No suggestions for this bag.')+'</p>';
   h+='<div class="tiles sug">';
   open.forEach(s=>{
-    h+='<div class="tilewrap"><button type="button" class="tile sug" data-drag data-act="b-add" data-id="'+s.id+'" title="'+esc(s.why)+'">'+
+    const must=MUST.has(s.id)&&ctx.wx&&ctx.wx.darkMin>0;
+    h+='<div class="tilewrap"><button type="button" class="tile sug'+(must?' must':'')+'" data-drag data-act="b-add" data-id="'+s.id+'" title="'+esc(s.why)+'">'+
        '<span class="tico">'+icon(s.id)+'</span><span class="tnm">'+esc(s.name)+'</span>'+(s.qty&&s.id==='cal'?'<span class="tqty">'+esc(s.qty)+'</span>':'')+
-       '<span class="twhy">'+esc(s.why)+'</span></button>'+
+       (must?'<span class="mustb">Must have</span>':'')+'<span class="twhy">'+esc(s.why)+'</span></button>'+
        '<button type="button" class="tx" data-act="b-dismiss" data-id="'+s.id+'" aria-label="Skip '+esc(s.name)+'">×</button></div>';
   });
   h+='</div>';
