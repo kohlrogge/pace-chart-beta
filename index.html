@@ -1157,7 +1157,7 @@ function dbBagView(R,bags,k){
       why:(ss?'Sunset is at '+fmtClock12(SAMPLE_SUNSET)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark, so bring headlamp batteries as well.'});
   }
   // Warm gear and layers: if an earlier bag (or the start) already has it, ask whether she still has it instead of repeating the warning.
-  const SAT={lightlayer:['lightlayer','extralayer','longsleeve','jacket','windshell','rainjacket'],extralayer:['extralayer','jacket'],beanie:['beanie'],gloves:['gloves']};
+  const SAT={lightlayer:['lightlayer','extralayer','longsleeve','jacket','windshell','rainjacket'],extralayer:['extralayer','jacket'],beanie:['beanie'],gloves:['gloves'],rainjacket:['rainjacket']};
   const where=j=>bags[j].kind==='start'?'the start':'your '+bags[j].name+' drop bag';
   const earlier=id=>{const hits=[]; for(let j=0;j<k;j++){(bagOf(bags[j].key).items||[]).forEach(it=>{if(SAT[id].includes(it.id)) hits.push({name:it.name,at:where(j)})})} return hits;};
   const gear=(ids,ico,todo,done,checkT,cond,ask)=>{ const why=cond+' '+ask;
@@ -1174,6 +1174,10 @@ function dbBagView(R,bags,k){
   } else if(x&&x.lo<50){
     gear(['lightlayer'],'lightlayer','Pack a layer.','Layer packed.','Layer check.',
       'It could drop to '+fmtT(x.lo)+' before '+ctx.nextBag+'.','Bring a layer you can put on as it cools off.');
+  }
+  if(x&&x.rain>=40){
+    gear(['rainjacket'],'rainjacket','Pack a rain jacket.','Rain jacket packed.','Rain jacket check.',
+      'Up to a '+x.rain+'% chance of rain before '+ctx.nextBag+'.','Bring a rain jacket, and a zip bag to keep your electronics dry.');
   }
   if(x&&x.hi>75){
     alerts.push({items:['extrasalt','bottle'],ico:'bottle',todo:'Hot stretch ahead.',done:'Ready for the heat.',
