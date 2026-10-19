@@ -885,11 +885,12 @@ const DB_LIB=[
   ['dryshoes','Shoes','finish'],['drysocks','Socks','finish'],['change','Change of clothes','finish'],['hoodie','Hoodie','finish'],['slides','Slides or sandals','finish']
 ].map(([id,name,cat])=>({id,name,cat}));
 const DB_BYID=Object.fromEntries(DB_LIB.map(x=>[x.id,x]));
-const DB_MORNING=['Apply sunscreen','Apply chafing balm','Turn in drop bags at check-in'];
+const DB_MORNING=['Apply sunscreen',"Apply Musher's Secret to feet",'Apply chafing balm','Turn in drop bags at check-in'];
 function bpFresh(){return {picks:[],bags:{},custom:[],morning:DB_MORNING.map(t=>({text:t})),step:'pick'}}
 function bpLoad(){try{const s=localStorage.getItem(BKEY);return s?JSON.parse(s):null}catch(e){return null}}
 function bpSave(){try{localStorage.setItem(BKEY,JSON.stringify(bp))}catch(e){}}
 let bp=Object.assign(bpFresh(),bpLoad()||{});
+(bp.morning||[]).forEach(m=>{ if(m.text==='Put Coke in vials and add to drop bags') m.text="Apply Musher's Secret to feet"; });
 (function(){const ren={via:['coffee','Instant coffee packet']},old={'Starbucks Via':1,'Spare batteries or charging cable':1,'Dry shoes':1,'Dry socks':1,'Buff':1};
   Object.values(bp.bags||{}).forEach(bg=>(bg.items||[]).forEach(it=>{ if(it.id==='tums'&&/dose/.test(it.qty||'')) it.qty=''; if(it.id==='tshirt'){it.id='shirt';it.name='Shirt'} if(it.qty==='1 jewelry bag') it.qty='1 small bag'; if({'Gin Gins':1,'Salted Coke':1,'S-caps':1,'Bladder':1,'Cozy hoodie':1}[it.name]&&DB_BYID[it.id]) it.name=DB_BYID[it.id].name; if(ren[it.id]){[it.id,it.name]=ren[it.id]} else if(old[it.name]&&DB_BYID[it.id]) it.name=DB_BYID[it.id].name; }));})();
 let dbErr='';
