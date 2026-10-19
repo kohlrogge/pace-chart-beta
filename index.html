@@ -262,8 +262,10 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .locset{margin:0}
 .geohits{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
 .coordrows{display:flex;flex-direction:column;gap:8px;margin-top:8px}
-.coordrow{display:grid;grid-template-columns:minmax(0,1fr) 9rem 9rem;gap:8px;align-items:center}
-@media (max-width:560px){.coordrow{grid-template-columns:1fr 1fr}.coordrow b{grid-column:1/-1}}
+.coordrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,15rem) auto;gap:4px 8px;align-items:center}
+.coordrow small{grid-column:2/-1}
+.coordrow .errs{color:var(--cut);font-weight:600}
+@media (max-width:560px){.coordrow{grid-template-columns:minmax(0,1fr) auto}.coordrow b,.coordrow small{grid-column:1/-1}}
 .legal{max-width:760px}
 .legal p{margin:0;max-width:65ch;font-size:1rem}
 .empty{border:2px dashed var(--grey);border-radius:12px;padding:20px;text-align:center}
@@ -989,6 +991,7 @@ function curRace(){return store.races.find(r=>r.id===store.cur)||null}
 function save(){const r=curRace(); if(!r||!chart) return; r.chart=chart; r.updated=Date.now(); writeStore();}
 function bpSave(){const r=curRace(); if(!r) return; r.bags=bp; r.updated=Date.now(); writeStore();}
 function migrateBp(b){
+  if(b.coords){ b.locs=b.locs||{}; Object.entries(b.coords).forEach(([k,c])=>{ if(c&&isFinite(c.lat)&&isFinite(c.lon)&&!b.locs[k]) b.locs[k]={name:(+c.lat).toFixed(3)+', '+(+c.lon).toFixed(3),lat:+c.lat,lon:+c.lon}; }); delete b.coords; }
   (b.morning||[]).forEach(m=>{ if(m.text==='Put Coke in vials and add to drop bags') m.text="Apply Musher's Secret to feet"; });
   const ren={via:['coffee','Instant coffee packet']},old={'Starbucks Via':1,'Spare batteries or charging cable':1,'Dry shoes':1,'Dry socks':1,'Buff':1};
   Object.values(b.bags||{}).forEach(bg=>(bg.items||[]).forEach(it=>{
@@ -1132,12 +1135,13 @@ function dbWin(R,i){
 const tUnit=()=>chart.tempUnit||(chart.unit==='km'?'C':'F');
 function fmtT(f){return tUnit()==='C'?Math.round((f-32)*5/9)+'°C':Math.round(f)+'°F'}
 function clk(el){const c=clockParts(el);return dayLabel(c.day)+' '+c.text}
-/* ---------- weather and daylight (Open-Meteo, no key; sends only a location and dates) ---------- */
-// Race times are local to the race. Open-Meteo answers in the race's local time (timezone=auto), so hours line up by
-// "month-day T hour" keys. Within 15 days of the race we use the forecast; further out we use the same dates from the
-// last three years: the coldest and hottest of those years drive the warnings, so runners pack for what could happen.
+/* ---------- weather and daylight (Open-Meteo, no key; sends only locations and dates) ---------- */
+// Race times are local to the race. Open-Meteo answers in local time (timezone=auto), so hours line up by "month-day T hour".
+// Within 15 days of the race we use the forecast; further out, the same dates from the last three years, where the coldest and
+// hottest year drive the warnings. On long courses each aid station can have its own location: for every 15 minutes of a
+// stretch we estimate where the runner is and use the weather at the nearest aid station that has a location.
 const SAMPLE_SUNRISE=420, SAMPLE_SUNSET=1140;   // used only when no weather could be loaded
-let curLoc=null, wxBusy=false, geoHits=null, geoBusy=false, geoErr='';
+let curLoc=null, wxBusy=false, geoHits=null, geoBusy=false, geoErr='', stGeo={};
 const pad2=n=>String(n).padStart(2,'0');
 function todOf(el){return ((chart.startTime+Math.round(el))%1440+1440)%1440}
 function baseUTC(){const [y,m,d]=(chart.startDate||'2000-01-01').split('-').map(Number);return Date.UTC(y,m-1,d)}
@@ -1145,9 +1149,16 @@ function elDate(el){return new Date(baseUTC()+(chart.startTime+Math.round(el))*6
 function mdKey(dt){return pad2(dt.getUTCMonth()+1)+'-'+pad2(dt.getUTCDate())}
 function hourKey(el){const dt=elDate(el);return mdKey(dt)+'T'+pad2(dt.getUTCHours())}
 function isoDay(ms){const dt=new Date(ms);return dt.getUTCFullYear()+'-'+pad2(dt.getUTCMonth()+1)+'-'+pad2(dt.getUTCDate())}
-function locFor(b){ const c=b&&bp.coords&&bp.coords[b.key]; return c&&isFinite(c.lat)&&isFinite(c.lon)?'c:'+b.key:'race'; }
-function locData(key){ return bp.wx&&bp.wx.locs&&bp.wx.locs[key]||bp.wx&&bp.wx.locs&&bp.wx.locs.race||null; }
+const okLoc=l=>l&&isFinite(l.lat)&&isFinite(l.lon);
 function hasWx(){ return !!(bp.wx&&bp.wx.locs&&bp.wx.locs.race&&!bp.wx.err); }
+// Weather data for the spot nearest a distance along the course (aid stations with their own location, else the race location).
+function locAtDist(d){
+  if(!hasWx()) return null;
+  let best=null, bd=Infinity;
+  // Nearest aid station wins; one without its own location stands for the race location.
+  (chart.stations||[]).forEach(s=>{ const dd=Math.abs(s.dist-d); if(dd<bd){bd=dd;best=bp.wx.locs['s:'+stKey(s)]||bp.wx.locs.race;} });
+  return best||bp.wx.locs.race;
+}
 function sunOf(el){ const L=curLoc&&curLoc.sun&&curLoc.sun[mdKey(elDate(el))]; return L?{rise:L[0],set:L[1]}:{rise:SAMPLE_SUNRISE,set:SAMPLE_SUNSET}; }
 function isDark(el){const t=todOf(el), s=sunOf(el);return t<s.rise||t>=s.set}
 function wxAt(el){
@@ -1156,107 +1167,156 @@ function wxAt(el){
   const hr=todOf(el)/60, T=51-13*Math.cos((hr-3)/24*2*Math.PI), t=todOf(el);   // sample day, only without real data
   return {lo:T,hi:T,rain:(t>=1320||t<240)?45:20};
 }
-function dbWx(from,to){
-  let lo=Infinity,hi=-Infinity,rain=0,darkMin=0,prev=isDark(from);const events=[],step=15;
+function dbWx(from,to,d0,d1){
+  const keep=curLoc;
+  let lo=Infinity,hi=-Infinity,rain=0,darkMin=0,prev=null;const events=[],step=15;
   for(let el=from;el<=to+0.01;el+=step){
+    if(d0!=null&&hasWx()) curLoc=locAtDist(d0+(d1-d0)*(to>from?(el-from)/(to-from):0));
     const w=wxAt(el);lo=Math.min(lo,w.lo);hi=Math.max(hi,w.hi);rain=Math.max(rain,w.rain);
     const d=isDark(el); if(d&&el<to) darkMin+=Math.min(step,to-el);
-    if(d!==prev){ const s=sunOf(el); events.push({type:d?'sunset':'sunrise',el,at:d?s.set:s.rise}); } prev=d;
+    if(prev!==null&&d!==prev){ const s=sunOf(el); events.push({type:d?'sunset':'sunrise',el,at:d?s.set:s.rise}); } prev=d;
   }
+  curLoc=keep;
   return {lo:Math.round(lo),hi:Math.round(hi),rain:Math.round(rain),darkMin,events};
 }
 function evText(ev){const c=clockParts(ev.el);return (ev.type==='sunset'?'Sunset ':'Sunrise ')+dayLabel(c.day)+' '+fmtClock12(ev.at)}
 
-// What to fetch: one set of hours for the race location, plus one per drop bag with its own GPS coordinates.
+// What to fetch: the race location plus every aid station the runner gave a location.
 function wxPlan(){
-  if(!chart||!chart.startDate||!bp.loc) return null;
+  if(!chart||!chart.startDate||!okLoc(bp.loc)) return null;
   const R=compute(chart), span=Math.ceil((chart.startTime+R.T)/1440)+1;
-  const locs={race:{lat:bp.loc.lat,lon:bp.loc.lon}};
-  (bp.picks||[]).forEach(k=>{const c=bp.coords&&bp.coords[k]; if(c&&isFinite(c.lat)&&isFinite(c.lon)) locs['c:'+k]={lat:c.lat,lon:c.lon};});
+  const locs=[{key:'race',lat:bp.loc.lat,lon:bp.loc.lon}];
+  Object.entries(bp.locs||{}).forEach(([k,l])=>{ if(okLoc(l)&&chart.stations.some(s=>stKey(s)===k)) locs.push({key:'s:'+k,lat:l.lat,lon:l.lon}); });
   const start=baseUTC(), end=start+(span-1)*864e5, today=Date.parse(isoDay(Date.now()));
   const kind=(end-today)/864e5<=15&&(start-today)>-864e5*3?'forecast':'typical';
   return {locs,start,end,kind,sig:JSON.stringify([chart.startDate,chart.startTime,span,locs,kind])};
 }
 async function getJSON(url){const r=await fetch(url);const j=await r.json();if(!r.ok||j.error) throw new Error(j.reason||('HTTP '+r.status));return j;}
 function hm(iso){const t=String(iso).split('T')[1]||'00:00';const [h,m]=t.split(':').map(Number);return h*60+m}
-async function fetchLoc(L,plan){
-  const q='latitude='+L.lat.toFixed(4)+'&longitude='+L.lon.toFixed(4)+'&temperature_unit=fahrenheit&timezone=auto&daily=sunrise,sunset';
-  const out={h:{},sun:{}};
-  if(plan.kind==='forecast'){
-    const j=await getJSON('https://api.open-meteo.com/v1/forecast?'+q+'&hourly=temperature_2m,precipitation_probability&start_date='+isoDay(plan.start)+'&end_date='+isoDay(plan.end));
-    j.hourly.time.forEach((t,i)=>{const T=j.hourly.temperature_2m[i], p=j.hourly.precipitation_probability[i]; if(T!=null) out.h[t.slice(5,13)]=[T,T,T,p==null?0:p];});
-    j.daily.time.forEach((t,i)=>{out.sun[t.slice(5)]=[hm(j.daily.sunrise[i]),hm(j.daily.sunset[i])];});
-  } else {
-    // Same dates in each of the last three full years of records.
-    const yr=new Date(plan.start).getUTCFullYear(), today=Date.now(), years=[];
-    for(let y=yr-1;years.length<3&&y>yr-8;y--){ const s=Date.UTC(y,new Date(plan.start).getUTCMonth(),new Date(plan.start).getUTCDate()); if(s+(plan.end-plan.start)<today-6*864e5) years.push(s); }
-    const per={};
-    for(const s of years){
-      const j=await getJSON('https://archive-api.open-meteo.com/v1/archive?'+q+'&hourly=temperature_2m,precipitation&start_date='+isoDay(s)+'&end_date='+isoDay(s+(plan.end-plan.start)));
-      const times=j.hourly.time, T=j.hourly.temperature_2m, P=j.hourly.precipitation;
-      times.forEach((t,i)=>{ if(T[i]==null) return; const k=t.slice(5,13);
-        // Rain "chance": did that year see measurable rain within 3 hours either side of this hour?
-        let wet=false; for(let d=-3;d<=3;d++){const v=P[i+d]; if(v!=null&&v>=0.2){wet=true;break}}
-        (per[k]=per[k]||[]).push([T[i],wet]); });
-      if(!Object.keys(out.sun).length) j.daily.time.forEach((t,i)=>{out.sun[t.slice(5)]=[hm(j.daily.sunrise[i]),hm(j.daily.sunset[i])];});
-    }
-    Object.entries(per).forEach(([k,a])=>{const ts=a.map(x=>x[0]);out.h[k]=[Math.min(...ts),Math.max(...ts),ts.reduce((s,v)=>s+v,0)/ts.length,Math.round(100*a.filter(x=>x[1]).length/a.length)];});
-    out.years=years.map(s=>new Date(s).getUTCFullYear());
+// One request covers up to 20 places; Open-Meteo answers a list when several are asked for.
+async function fetchBatch(locs,base,extra){
+  const out=[];
+  for(let i=0;i<locs.length;i+=20){
+    const g=locs.slice(i,i+20);
+    const j=await getJSON(base+'?latitude='+g.map(l=>l.lat.toFixed(4)).join(',')+'&longitude='+g.map(l=>l.lon.toFixed(4)).join(',')+'&temperature_unit=fahrenheit&timezone=auto&daily=sunrise,sunset'+extra);
+    (Array.isArray(j)?j:[j]).forEach(x=>out.push(x));
   }
   return out;
+}
+async function fetchAll(plan){
+  const res={}; plan.locs.forEach(l=>res[l.key]={h:{},sun:{}});
+  const sunFrom=(j,o)=>j.daily.time.forEach((t,i)=>{o.sun[t.slice(5)]=[hm(j.daily.sunrise[i]),hm(j.daily.sunset[i])];});
+  if(plan.kind==='forecast'){
+    const arr=await fetchBatch(plan.locs,'https://api.open-meteo.com/v1/forecast','&hourly=temperature_2m,precipitation_probability&start_date='+isoDay(plan.start)+'&end_date='+isoDay(plan.end));
+    arr.forEach((j,n)=>{ const o=res[plan.locs[n].key];
+      j.hourly.time.forEach((t,i)=>{const T=j.hourly.temperature_2m[i], p=j.hourly.precipitation_probability[i]; if(T!=null) o.h[t.slice(5,13)]=[T,T,T,p==null?0:p];});
+      sunFrom(j,o); });
+  } else {
+    const s0=new Date(plan.start), yr=s0.getUTCFullYear(), today=Date.now(), years=[];
+    for(let y=yr-1;years.length<3&&y>yr-8;y--){ const s=Date.UTC(y,s0.getUTCMonth(),s0.getUTCDate()); if(s+(plan.end-plan.start)<today-6*864e5) years.push(s); }
+    const per=plan.locs.map(()=>({}));
+    for(const s of years){
+      const arr=await fetchBatch(plan.locs,'https://archive-api.open-meteo.com/v1/archive','&hourly=temperature_2m,precipitation&start_date='+isoDay(s)+'&end_date='+isoDay(s+(plan.end-plan.start)));
+      arr.forEach((j,n)=>{ const P=j.hourly.precipitation, T=j.hourly.temperature_2m;
+        j.hourly.time.forEach((t,i)=>{ if(T[i]==null) return; const k=t.slice(5,13);
+          // Rain "chance": did that year see measurable rain within 3 hours either side of this hour?
+          let wet=false; for(let d=-3;d<=3;d++){const v=P[i+d]; if(v!=null&&v>=0.2){wet=true;break}}
+          (per[n][k]=per[n][k]||[]).push([T[i],wet]); });
+        const o=res[plan.locs[n].key]; if(!Object.keys(o.sun).length) sunFrom(j,o); });
+    }
+    plan.locs.forEach((l,n)=>{ const o=res[l.key]; o.years=years.map(s=>new Date(s).getUTCFullYear());
+      Object.entries(per[n]).forEach(([k,a])=>{const ts=a.map(x=>x[0]);o.h[k]=[Math.min(...ts),Math.max(...ts),ts.reduce((s,v)=>s+v,0)/ts.length,Math.round(100*a.filter(x=>x[1]).length/a.length)];}); });
+  }
+  return res;
 }
 async function loadWx(force){
   const plan=wxPlan(); if(!plan||wxBusy) return;
   const fresh=bp.wx&&bp.wx.sig===plan.sig&&!bp.wx.err&&(plan.kind==='typical'||Date.now()-bp.wx.at<3*36e5);
   if(fresh&&!force) return;
   wxBusy=true; render();
-  try{
-    const locs={};
-    for(const [k,L] of Object.entries(plan.locs)) locs[k]=await fetchLoc(L,plan);
-    bp.wx={sig:plan.sig,kind:plan.kind,at:Date.now(),locs};
-  }catch(e){
-    bp.wx=Object.assign({},bp.wx&&bp.wx.sig===plan.sig?bp.wx:{},{err:'We couldn\'t get the weather right now. Check your connection and try again.',at:Date.now(),sig:plan.sig});
-  } finally { wxBusy=false; bpSave(); render(); }
+  try{ bp.wx={sig:plan.sig,kind:plan.kind,at:Date.now(),locs:await fetchAll(plan)}; }
+  catch(e){ bp.wx=Object.assign({},bp.wx&&bp.wx.sig===plan.sig?bp.wx:{},{err:'We couldn\'t get the weather right now. Check your connection and try again.',at:Date.now(),sig:plan.sig}); }
+  finally { wxBusy=false; bpSave(); render(); }
+}
+async function geocode(q){
+  q=String(q||'').trim();
+  const j=await getJSON('https://geocoding-api.open-meteo.com/v1/search?count=5&language=en&name='+encodeURIComponent(q.split(',')[0].trim()));
+  let hits=(j.results||[]).map(r=>({name:[r.name,r.admin1,r.country].filter(Boolean).join(', '),lat:r.latitude,lon:r.longitude}));
+  const extra=q.split(',').slice(1).join(',').trim().toLowerCase(); if(extra){const f=hits.filter(h=>h.name.toLowerCase().includes(extra)); if(f.length) hits=f;}
+  return hits;
 }
 async function geoSearch(q){
   q=String(q||'').trim(); if(!q){geoErr='Type a town or city near the race.';render();return}
   geoBusy=true; geoErr=''; geoHits=null; render();
-  try{ const j=await getJSON('https://geocoding-api.open-meteo.com/v1/search?count=5&language=en&name='+encodeURIComponent(q.split(',')[0].trim()));
-    let hits=(j.results||[]).map(r=>({name:[r.name,r.admin1,r.country].filter(Boolean).join(', '),lat:r.latitude,lon:r.longitude}));
-    const extra=q.split(',').slice(1).join(',').trim().toLowerCase(); if(extra){const f=hits.filter(h=>h.name.toLowerCase().includes(extra)); if(f.length) hits=f;}
-    geoHits=hits; if(!hits.length) geoErr='No places found for "'+q+'". Try a nearby town, or enter GPS coordinates.';
-  }catch(e){ geoErr='We couldn\'t search for places right now. Check your connection, or enter GPS coordinates.'; }
+  try{ geoHits=await geocode(q); if(!geoHits.length) geoErr='No places found for "'+q+'". Try a nearby town, or enter GPS coordinates.'; }
+  catch(e){ geoErr='We couldn\'t search for places right now. Check your connection, or enter GPS coordinates.'; }
   finally{ geoBusy=false; render(); }
 }
 function parseCoord(t,max){const v=parseFloat(String(t).trim());return isFinite(v)&&Math.abs(v)<=max?v:NaN}
+// "36.54, -84.70" (or with a tab or space) -> {lat,lon}; anything else is treated as a place name.
+function parseLatLon(t){const m=String(t||'').trim().match(/^(-?\d+(?:\.\d+)?)[\s,;]+(-?\d+(?:\.\d+)?)$/); if(!m) return null; const la=+m[1], lo=+m[2]; return Math.abs(la)<=90&&Math.abs(lo)<=180?{lat:la,lon:lo}:null;}
+async function setStationLoc(k,text){
+  text=String(text||'').trim(); bp.locs=bp.locs||{};
+  if(!text){ delete bp.locs[k]; stGeo[k]=null; bpSave(); render(); loadWx(); return; }
+  const ll=parseLatLon(text);
+  if(ll){ bp.locs[k]={name:ll.lat.toFixed(3)+', '+ll.lon.toFixed(3),lat:ll.lat,lon:ll.lon}; stGeo[k]=null; bpSave(); render(); loadWx(); return; }
+  stGeo[k]={busy:true}; render();
+  try{ const hits=await geocode(text);
+    if(!hits.length) stGeo[k]={err:'No place found. Try a nearby town, or paste GPS coordinates.'};
+    else { bp.locs[k]=hits[0]; stGeo[k]=hits.length>1?{alts:hits.slice(1)}:null; bpSave(); loadWx(); }
+  }catch(e){ stGeo[k]={err:'Couldn\'t look that up right now. Paste GPS coordinates instead.'}; }
+  render();
+}
+// Paste one aid station per line in race order: "lat, lon", or "name, lat, lon" (tabs work too). Blank lines are skipped.
+function pasteStationLocs(text){
+  const lines=String(text||'').split(/\r?\n/).map(l=>l.trim()).filter(Boolean), out=[];
+  lines.forEach(l=>{ const nums=(l.match(/-?\d+(?:\.\d+)?/g)||[]).map(Number); if(nums.length>=2){ const la=nums[nums.length-2], lo=nums[nums.length-1]; if(Math.abs(la)<=90&&Math.abs(lo)<=180&&String(la).includes('.')) out.push({lat:la,lon:lo}); } });
+  if(!out.length) return 'Couldn\'t find coordinates in those lines. Each line needs a latitude and longitude, like 36.54, -84.70.';
+  const st=chart.stations, off=out.length===st.length?0:out.length===st.length-1?1:out.length===st.length-2?1:-1;
+  if(off<0) return 'Found '+out.length+' sets of coordinates, but this race has '+st.length+' stops including the start and finish. Paste one line per aid station, in order.';
+  bp.locs=bp.locs||{};
+  out.forEach((ll,n)=>{ const s=st[n+off]; if(s) bp.locs[stKey(s)]={name:ll.lat.toFixed(3)+', '+ll.lon.toFixed(3),lat:ll.lat,lon:ll.lon}; });
+  bpSave(); loadWx(); return '';
+}
+let pasteErr='';
 
 function wxBanner(){
-  if(!bp.loc) return '<div class="banner"><p><b>Add the race location</b> on the Drop bags step to get the forecast and real sunrise and sunset times. Until then, conditions are a sample day.</p></div>';
+  if(!okLoc(bp.loc)) return '<div class="banner"><p><b>Add the race location</b> on the Drop bags step to get the forecast and real sunrise and sunset times. Until then, conditions are a sample day.</p></div>';
   if(!chart.startDate) return '<div class="banner"><p><b>Add the race date</b> to get the weather.</p></div>';
-  if(wxBusy) return '<div class="banner"><p><b>Getting the weather for '+esc(bp.loc.name)+'...</b></p></div>';
+  if(wxBusy) return '<div class="banner"><p><b>Getting the weather...</b></p></div>';
   if(bp.wx&&bp.wx.err) return '<div class="banner"><p><b>'+esc(bp.wx.err)+'</b> Conditions below are a sample day until it loads.</p><button type="button" class="btn sm" data-act="b-wx">Try again</button></div>';
   if(!hasWx()) return '<div class="banner"><p>Weather hasn\'t loaded yet.</p><button type="button" class="btn sm" data-act="b-wx">Get weather</button></div>';
+  const n=Object.keys(bp.wx.locs).length-1, where=n?esc(bp.loc.name)+' and '+n+' aid station location'+(n>1?'s':''):esc(bp.loc.name);
   const at=new Date(bp.wx.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-  if(bp.wx.kind==='forecast') return '<div class="banner"><p><b>Forecast for '+esc(bp.loc.name)+'</b>, updated '+esc(at)+'. Forecasts change, so check again the day before you pack.</p><button type="button" class="btn sm" data-act="b-wx">Refresh</button></div>';
+  if(bp.wx.kind==='forecast') return '<div class="banner"><p><b>Forecast for '+where+'</b>, updated '+esc(at)+'. Forecasts change, so check again the day before you pack.</p><button type="button" class="btn sm" data-act="b-wx">Refresh</button></div>';
   const ys=(bp.wx.locs.race.years||[]);
-  return '<div class="banner"><p><b>Typical weather for '+esc(bp.loc.name)+'</b> on your race dates'+(ys.length?' in '+ys.join(', '):'')+'. Warnings use the coldest and hottest of those years. The real forecast shows up within about two weeks of race day.</p></div>';
+  return '<div class="banner"><p><b>Typical weather for '+where+'</b> on your race dates'+(ys.length?' in '+ys.join(', '):'')+'. Warnings use the coldest and hottest of those years. The real forecast shows up within about two weeks of race day.</p></div>';
 }
 
 function dbLocBox(){
-  let h='<div class="locbox"><h3>Where is the race?</h3><p class="preview">Used for the forecast and sunrise and sunset times. Only the location and dates are sent to the weather service.</p>';
-  if(bp.loc) h+='<p class="locset"><b>'+esc(bp.loc.name)+'</b> <span class="muted num">('+bp.loc.lat.toFixed(3)+', '+bp.loc.lon.toFixed(3)+')</span> <button type="button" class="linkbtn" data-act="b-locclear">Change</button></p>';
+  let h='<div class="locbox"><h3>Where is the race?</h3><p class="preview">Used for the forecast and sunrise and sunset times. Only locations and dates are sent to the weather service.</p>';
+  if(okLoc(bp.loc)) h+='<p class="locset"><b>'+esc(bp.loc.name)+'</b> '+(parseLatLon(bp.loc.name)?'':'<span class="muted num">('+bp.loc.lat.toFixed(3)+', '+bp.loc.lon.toFixed(3)+')</span>')+' <button type="button" class="linkbtn" data-act="b-locclear">Change</button></p>';
   else {
-    h+='<div class="addrow"><input class="in" id="db-geo" placeholder="Town near the race, e.g. Oneida, TN" autocomplete="off"><button type="button" class="btn" data-act="b-geo"'+(geoBusy?' disabled':'')+'>'+(geoBusy?'Searching...':'Search')+'</button></div>';
+    h+='<div class="addrow"><input class="in" id="db-geo" placeholder="Town near the race, or GPS like 36.54, -84.70" autocomplete="off"><button type="button" class="btn" data-act="b-geo"'+(geoBusy?' disabled':'')+'>'+(geoBusy?'Searching...':'Search')+'</button></div>';
     if(geoErr) h+='<p class="err" role="alert">'+esc(geoErr)+'</p>';
     if(geoHits&&geoHits.length) h+='<div class="geohits">'+geoHits.map((g,i)=>'<button type="button" class="btn" data-act="b-geopick" data-i="'+i+'">'+esc(g.name)+'</button>').join('')+'</div>';
-    h+='<details class="paste"><summary>Use GPS coordinates instead</summary><div class="addrow" style="margin-top:8px"><input class="in" id="db-lat" placeholder="Latitude, e.g. 36.54" inputmode="decimal" autocomplete="off"><input class="in" id="db-lon" placeholder="Longitude, e.g. -84.70" inputmode="decimal" autocomplete="off"><button type="button" class="btn" data-act="b-latlon">Use these</button></div></details>';
   }
-  if(bp.loc&&(bp.picks||[]).length){
-    h+='<details class="paste"'+(bp.coords&&Object.keys(bp.coords).length?' open':'')+'><summary>Does the race list GPS coordinates for your drop bag stations?</summary><p class="preview">Add them for more accurate weather and daylight on mountain courses. Leave blank to use the race location.</p><div class="coordrows">';
-    const R=compute(chart);
-    R.rows.forEach((r,i)=>{ const k=stKey(chart.stations[i]); if(!bp.picks.includes(k)) return; const c=(bp.coords&&bp.coords[k])||{};
-      h+='<div class="coordrow"><b>'+esc(r.name)+'</b><input class="in" data-co="lat" data-k="'+esc(k)+'" value="'+(isFinite(c.lat)?c.lat:'')+'" placeholder="Latitude" inputmode="decimal" autocomplete="off"><input class="in" data-co="lon" data-k="'+esc(k)+'" value="'+(isFinite(c.lon)?c.lon:'')+'" placeholder="Longitude" inputmode="decimal" autocomplete="off"></div>'; });
-    h+='</div></details>';
+  if(okLoc(bp.loc)){
+    const n=Object.values(bp.locs||{}).filter(okLoc).length;
+    h+='<details class="paste"'+(n?' open':'')+'><summary>Aid station locations'+(n?' ('+n+' set)':'')+'</summary>'+
+       '<p class="preview">On long courses the weather can be very different from the start. Give any aid station its own town or GPS coordinates, and the weather for each stretch uses the closest one. Stations left blank use the race location.</p><div class="coordrows">';
+    chart.stations.forEach((s,i)=>{ const k=stKey(s), L=(bp.locs||{})[k], g=stGeo[k];
+      const label=i===0?'Start':i===chart.stations.length-1?'Finish':s.name;
+      h+='<div class="coordrow"><b>'+esc(label)+(i===0||i===chart.stations.length-1?'':' <span class="muted num">'+dShow(s.dist).toFixed(1)+' '+uLabel()+'</span>')+'</b>'+
+         '<input class="in" data-stloc="'+esc(k)+'" value="'+esc(okLoc(L)?L.name:'')+'" placeholder="Town or GPS" autocomplete="off">'+
+         '<button type="button" class="btn sm" data-act="b-stloc" data-k="'+esc(k)+'"'+(g&&g.busy?' disabled':'')+'>'+(g&&g.busy?'...':'Set')+'</button>'+
+         (okLoc(L)&&!parseLatLon(L.name)?'<small class="muted num">'+L.lat.toFixed(3)+', '+L.lon.toFixed(3)+'</small>':'')+
+         (g&&g.err?'<small class="errs">'+esc(g.err)+'</small>':'')+
+         (g&&g.alts?'<small>Not it? '+g.alts.map((a,j)=>'<button type="button" class="linkbtn" data-act="b-stalt" data-k="'+esc(k)+'" data-j="'+j+'">'+esc(a.name)+'</button>').join(' · ')+'</small>':'')+
+         '</div>'; });
+    h+='</div><details class="paste" style="margin-top:10px"'+(pasteErr?' open':'')+'><summary>Paste coordinates for every aid station</summary><p class="preview">One aid station per line, in race order, with latitude and longitude, like <span class="num">Pickett, 36.55, -84.80</span>. You can paste straight from a spreadsheet.</p>'+
+       '<textarea id="db-pastelocs" class="in" placeholder="Start, 36.49, -84.70&#10;Pickett, 36.55, -84.80"></textarea>'+(pasteErr?'<p class="err" role="alert">'+esc(pasteErr)+'</p>':'')+
+       '<div style="margin-top:8px"><button type="button" class="btn" data-act="b-pastelocs">Use these</button></div></details></details>';
   }
   return h+'</div>';
 }
@@ -1264,7 +1324,7 @@ function fmtHrs(min){min=Math.round(min);const h=Math.floor(min/60),m=min%60;ret
 
 function dbCtx(R,bags,k){
   const b=bags[k], w=dbWin(R,b.i), ctx={b,w};
-  curLoc=locData(locFor(b));
+  curLoc=locAtDist(R.rows[b.i].dist);
   if(b.kind!=='finish'){
     const nx=bags[k+1], nw=dbWin(R,nx.i);
     Object.assign(ctx,{next:nx,nw,from:w.early,to:nw.late,nextName:nx.kind==='finish'?'the finish':nx.name,nextBag:nx.kind==='finish'?'the finish':nx.name+' drop bag'});
@@ -1276,7 +1336,7 @@ function dbCtx(R,bags,k){
     const pick=(bp.bags[b.key]||{}).col;
     ctx.sel=ctx.legs.find(l=>l.label===pick)||ctx.slow;
     ctx.from=ctx.sel.from; ctx.to=ctx.sel.to;
-    ctx.mins=ctx.sel.mins; ctx.hours=ctx.mins/60; ctx.wx=dbWx(ctx.from,ctx.to);
+    ctx.mins=ctx.sel.mins; ctx.hours=ctx.mins/60; ctx.wx=dbWx(ctx.from,ctx.to,R.rows[b.i].dist,R.rows[nx.i].dist);
     ctx.miNext=R.rows[nx.i].dist-R.rows[b.i].dist;
     // If she could reach this bag after dark, the stretch before it already told her to carry a headlamp.
     ctx.hasLamp=k>0&&isDark(ctx.from);
@@ -1739,7 +1799,11 @@ function dbAct(a,btn){
   }
   if(a==='b-calfocus'){const el=document.querySelector('[data-cal]'); if(el){el.closest('.calbox').scrollIntoView({block:'center',behavior:'smooth'}); el.focus({preventScroll:true}); el.select(); const bx=el.closest('.calbox'); bx.classList.remove('flash'); void bx.offsetWidth; bx.classList.add('flash');} return;}
   if(a==='b-pdf'){saveBagPdf(); return;}
-  if(a==='b-geo'){const el=document.getElementById('db-geo'); geoSearch(el&&el.value); return;}
+  if(a==='b-geo'){const el=document.getElementById('db-geo'), ll=parseLatLon(el&&el.value);
+    if(ll){bp.loc={name:ll.lat.toFixed(3)+', '+ll.lon.toFixed(3),lat:ll.lat,lon:ll.lon}; geoErr=''; bpSave(); render(); loadWx(true);} else geoSearch(el&&el.value); return;}
+  if(a==='b-stloc'){const el=document.querySelector('[data-stloc="'+CSS.escape(btn.dataset.k)+'"]'); setStationLoc(btn.dataset.k,el&&el.value); return;}
+  if(a==='b-stalt'){const g=stGeo[btn.dataset.k], alt=g&&g.alts&&g.alts[+btn.dataset.j]; if(alt){bp.locs[btn.dataset.k]=alt; stGeo[btn.dataset.k]=null; bpSave(); render(); loadWx();} return;}
+  if(a==='b-pastelocs'){const el=document.getElementById('db-pastelocs'); pasteErr=pasteStationLocs(el&&el.value); render(); return;}
   if(a==='b-geopick'){const g=geoHits&&geoHits[+btn.dataset.i]; if(g){bp.loc=g; geoHits=null; geoErr=''; bpSave(); render(); loadWx(true);} return;}
   if(a==='b-latlon'){const la=parseCoord((document.getElementById('db-lat')||{}).value,90), lo=parseCoord((document.getElementById('db-lon')||{}).value,180);
     if(isNaN(la)||isNaN(lo)){geoErr='Enter latitude and longitude as numbers, like 36.54 and -84.70.';render();return}
@@ -1821,7 +1885,7 @@ app.addEventListener('change',e=>{
     if(t.id==='db-ccat') dbDraft.cat=t.value;
     if(t.dataset.ck!=null){ const list=t.dataset.ck==='m'?bp.morning:bagOf(t.dataset.ck).items, x=list[+t.dataset.j]; if(x){x.done=t.checked;bpSave()} }
     if(t.id==='db-date'&&t.value){chart.startDate=t.value;save();render();loadWx()}
-    if(t.dataset.co){ bp.coords=bp.coords||{}; const c=bp.coords[t.dataset.k]=bp.coords[t.dataset.k]||{}; const v=parseCoord(t.value,t.dataset.co==='lat'?90:180); c[t.dataset.co]=isNaN(v)?null:v; if(!t.value.trim()) c[t.dataset.co]=null; bpSave(); }
+    if(t.dataset.stloc!=null){ const k=t.dataset.stloc, L=(bp.locs||{})[k]; if(t.value.trim()!==((L&&L.name)||'')) setStationLoc(k,t.value); }
   }
 });
 app.addEventListener('input',e=>{
@@ -1842,7 +1906,8 @@ function goNext(){
 app.addEventListener('keydown',e=>{
   if(e.key!=='Enter'||e.isComposing) return;
   const t=e.target;
-  if(t&&t.id==='db-geo'){e.preventDefault();geoSearch(t.value);return}
+  if(t&&t.id==='db-geo'){e.preventDefault();dbAct('b-geo',t);return}
+  if(t&&t.dataset&&t.dataset.stloc!=null){e.preventDefault();t.blur();return}
   if(t&&(t.id==='db-cname'||t.id==='db-madd')){e.preventDefault();dbAct(t.id==='db-cname'?'b-custom':'b-madd',t);return} if(!(t&&t.tagName==='INPUT'&&t.closest('#wizform'))) return;
   if(t.type==='radio'||t.type==='checkbox') return;
   e.preventDefault(); goNext();
