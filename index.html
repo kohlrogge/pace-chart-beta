@@ -449,7 +449,7 @@ async function ensurePdfLib(){
   return window.jspdf.jsPDF;
 }
 function buildPdf(jsPDF){
-  const R=compute(chart), wide=(3+(showSeg()?1:0)+R.plans.length)>7;
+  const R=compute(chart), wide=(3+(showSeg()?1:0)+(R.adv?1:0)+R.plans.length)>7;
   const doc=new jsPDF({orientation:wide?'landscape':'portrait',unit:'pt',format:'letter'});
   const W=doc.internal.pageSize.getWidth(), M=36;
   // header band like the site
@@ -483,8 +483,8 @@ function buildPdf(jsPDF){
   y += (Math.ceil(items/perRow)-1)*46;
   // table
   const seg=showSeg();
-  const head=[['Aid station',uLabel()].concat(seg?['Segment']:[]).concat(chart.plans.map(p=>p.label+'\n'+fmtDur(p.time))).concat([chart.labels.cut+'\n'+fmtDur(chart.total)])];
-  const body=R.rows.map((r,i)=>[r.name+(r.first?'  (start)':r.last?'  (finish)':''),dShow(r.dist).toFixed(1)].concat(seg?[r.first?'':dShow(r.seg).toFixed(1)]:[])
+  const head=[['Aid station',uLabel()].concat(seg?['Segment']:[]).concat(R.adv?['Climb / desc ('+eLabel()+')']:[]).concat(chart.plans.map(p=>p.label+'\n'+fmtDur(p.time))).concat([chart.labels.cut+'\n'+fmtDur(chart.total)])];
+  const body=R.rows.map((r,i)=>[r.name+(r.first?'  (start)':r.last?'  (finish)':''),dShow(r.dist).toFixed(1)].concat(seg?[r.first?'':dShow(r.seg).toFixed(1)]:[]).concat(R.adv?[elevText(r)]:[])
     .concat(R.plans.map(p=>showTimePlain(p.times[i]))).concat([showTimePlain(r.cut)]));
   const nCols=head[0].length, cutCol=nCols-1, firstPlan=cutCol-R.plans.length;
   const colStyles={0:{halign:'left',fontStyle:'bold'}}; for(let c=1;c<nCols;c++) colStyles[c]={halign:'right'};
@@ -500,12 +500,12 @@ function buildPdf(jsPDF){
       if(c>=firstPlan && c<cutCol){ d.cell.styles.fontStyle='bold';
         const p=R.plans[c-firstPlan]; if(p.pinned.has(i)){ d.cell.styles.fillColor=[255,241,214]; d.cell.styles.textColor=[138,83,0]; } }
       if(c===cutCol && !r.first){ if(r.hard){ d.cell.styles.textColor=[198,40,40]; d.cell.styles.fontStyle='bold'; } else d.cell.styles.textColor=[110,124,130]; }
-      if(seg && c===2) d.cell.styles.textColor=[110,124,130];
+      if((seg && c===2)||(R.adv && c===(seg?3:2))) d.cell.styles.textColor=[110,124,130];
     }
   });
   let fy=doc.lastAutoTable.finalY+16;
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(90,104,110);
-  const note='Red cutoff times are posted by the race; grey cutoff times are estimated from the overall cutoff. Shaded plan times were moved earlier so the runner arrives at least '+R.margin+' minutes before that posted cutoff; pace between those points stays even.'+
+  const note=(R.adv?'Plan times factor in climb and descent: each 1,000 ft of climbing counts as 1.9 extra miles; downhills are set to '+(DESC_OPTS.find(o=>o[0]===(chart.descent||'mixed'))[1].toLowerCase())+'. ':'')+'Red cutoff times are posted by the race; grey cutoff times are estimated from the overall cutoff. Shaded plan times were moved earlier so the runner arrives at least '+R.margin+' minutes before that posted cutoff; pace between those points stays even.'+
     (chart.display==='clock'?' Times are time of day.':' Times are elapsed race time (hours:minutes).');
   const lines=doc.splitTextToSize(note,W-2*M);
   if(fy+lines.length*10>doc.internal.pageSize.getHeight()-24){ doc.addPage(); fy=48; }
@@ -595,26 +595,41 @@ function marginIssue(m,stations,plans,total){
   }
   return '';
 }
+/* Advanced pacing: each section becomes "effort miles" so climbs get more time and runnable descents less.
+   Climb: 1,000 ft counts as 1.9 extra miles (ITRA's 100 m = 1 km, converted). Descent per 1,000 ft, from
+   Langmuir's corrections: runnable -0.5 mi, mixed 0 (ITRA ignores descent), steep or technical +0.5 mi.
+   A section never counts as less than half its real distance. The goal time is then shared out by effort. */
+const DESC_K={runnable:-0.5,mixed:0,steep:0.5}, CLIMB_MI=1.9, FT_PER_M=3.28084;
+function effortOf(c){
+  const st=c.stations, k=DESC_K[c.descent]!=null?DESC_K[c.descent]:0; let e=0;
+  return st.map((s,i)=>{ if(!i) return 0; const seg=s.dist-st[i-1].dist, g=+s.gain||0, l=+s.loss||0;
+    e+=Math.max(seg*0.5,seg+CLIMB_MI*g/1000+k*l/1000); return e; });
+}
+const eLabel=()=>chart.unit==='km'?'m':'ft';
+const eShow=ft=>Math.round(chart.unit==='km'?ft/FT_PER_M:ft).toLocaleString('en-US');
+function elevText(r){ if(r.first) return ''; const g=+r.gain||0,l=+r.loss||0; return (g||l)?'+'+eShow(g)+' / -'+eShow(l):''; }
+const DESC_OPTS=[['runnable','Runnable'],['mixed','Mixed'],['steep','Steep or technical']];
 function compute(c){
   if(c.manual) return computeManual(c);
   const st=c.stations, last=st.length-1, D=st[last].dist, T=c.total;
+  const E=c.adv?effortOf(c):st.map(s=>s.dist), ED=E[last];
   const rows=st.map((s,i)=>{
     let hard=false,cut;
     if(i===0){cut=0}
     else if(i===last){cut=T;hard=true}
     else if(s.cutoff!=null){cut=s.cutoff;hard=true}
-    else cut=T*s.dist/D;
-    return {name:s.name,dist:s.dist,seg:i?s.dist-st[i-1].dist:0,cut,hard,first:i===0,last:i===last};
+    else cut=T*E[i]/ED;
+    return {name:s.name,dist:s.dist,seg:i?s.dist-st[i-1].dist:0,e:E[i],gain:s.gain,loss:s.loss,cut,hard,first:i===0,last:i===last};
   });
   const M = marginOf(c);
   function plan(target){
-    // Even pace between anchors. Start at 0 and the finish at the target are anchors; any posted cutoff the plan
-    // would reach later than (cutoff - margin) becomes an anchor at exactly (cutoff - margin). Repeat until none.
-    const anchors=[{i:0,d:0,t:0},{i:rows.length-1,d:D,t:target}];
+    // Even pace between anchors (even effort in advanced mode: d is effort miles there). Start at 0 and the finish at the
+    // target are anchors; any posted cutoff the plan would reach later than (cutoff - margin) becomes an anchor at exactly (cutoff - margin). Repeat until none.
+    const anchors=[{i:0,d:0,t:0},{i:rows.length-1,d:ED,t:target}];
     const pinned=new Set();
     const interp=()=>rows.map(r=>{
-      let k=0; while(k<anchors.length-2 && anchors[k+1].d<r.dist) k++;
-      const a=anchors[k],b=anchors[k+1]; return a.t+(b.t-a.t)*(r.dist-a.d)/(b.d-a.d);
+      let k=0; while(k<anchors.length-2 && anchors[k+1].d<r.e) k++;
+      const a=anchors[k],b=anchors[k+1]; return a.t+(b.t-a.t)*(r.e-a.d)/(b.d-a.d);
     });
     let times=interp();
     for(let guard=0; guard<rows.length; guard++){
@@ -623,7 +638,7 @@ function compute(c){
         const over=times[i]-(r.cut-M); if(over>0.01&&(!worst||over>worst.over)) worst={i,over}; });
       if(!worst) break;
       pinned.add(worst.i);
-      anchors.push({i:worst.i,d:rows[worst.i].dist,t:rows[worst.i].cut-M});
+      anchors.push({i:worst.i,d:rows[worst.i].e,t:rows[worst.i].cut-M});
       anchors.sort((x,y)=>x.d-y.d);
       times=interp();
     }
@@ -633,8 +648,8 @@ function compute(c){
     return {target,times,misses,tight,pinned};
   }
   let limit=Infinity, limitAt=null;
-  rows.forEach((r,i)=>{ if(r.hard&&r.dist>0){const f=r.cut/r.dist*D; if(f<limit){limit=f;limitAt=i}} });
-  return {rows,D,T,plans:c.plans.map(p=>Object.assign(plan(p.time),{label:p.label})),margin:M,limit,limitAt,hardCount:rows.filter(r=>r.hard).length};
+  rows.forEach((r,i)=>{ if(r.hard&&r.e>0){const f=r.cut/r.e*ED; if(f<limit){limit=f;limitAt=i}} });
+  return {rows,D,ED,adv:!!c.adv,T,plans:c.plans.map(p=>Object.assign(plan(p.time),{label:p.label})),margin:M,limit,limitAt,hardCount:rows.filter(r=>r.hard).length};
 }
 
 /* ---------- chart view ---------- */
@@ -661,7 +676,7 @@ function planCard(p,R){
   } else {
     status='<span class="chip ok">Clears all '+R.hardCount+' hard cutoffs</span>';
     if(n) status+='<p><span class="adjkey"></span>Sped up to arrive '+R.margin+' min before the cutoff at <b>'+n+'</b> station'+(n>1?'s':'')+', then eased off after to still finish in '+fmtDur(p.target)+'.</p>';
-    else status+='<p>Even pace the whole way. Closest call: <b>'+esc(R.rows[p.tight.i].name)+'</b>, '+fmtDur(p.tight.b)+' ahead of the cutoff.</p>';
+    else status+='<p>'+(R.adv?'Even effort':'Even pace')+' the whole way. Closest call: <b>'+esc(R.rows[p.tight.i].name)+'</b>, '+fmtDur(p.tight.b)+' ahead of the cutoff.</p>';
   }
   const avg=fmtPace(paceOf(p.target,R.D));
   return '<div class="card"><div class="row"><span class="eyebrow">'+esc(lbl)+'</span>'+(n?'<span class="chip adj">Adjusted at '+n+'</span>':'')+'</div>'+
@@ -674,7 +689,7 @@ function cutCard(R){
   const lim = R.limitAt!=null && isFinite(R.limit);
   return '<div class="card cutcard"><div class="row"><span class="eyebrow">'+esc(chart.labels.cut)+'</span><span class="muted" style="font-size:.8rem">'+R.hardCount+' hard, '+(R.rows.length-1-R.hardCount)+' estimated</span></div>'+
     '<div class="row"><span class="big num" style="color:var(--cut)">'+fmtDur(R.T)+'</span><span class="muted num">'+fmtPace(paceOf(R.T,R.D))+' /'+uLabel()+' avg</span></div>'+
-    (lim?'<p>Slowest <b>even</b> pace that clears every cutoff: <b class="num">'+fmtPace(paceOf(R.limit,R.D))+' /'+uLabel()+'</b>, a <b class="num">'+fmtDur(R.limit)+'</b> finish. The binding cutoff is <b>'+esc(R.rows[R.limitAt].name)+'</b>.</p>':'')+
+    (lim?'<p>Slowest <b>even</b> '+(R.adv?'effort':'pace')+' that clears every cutoff: '+(R.adv?'':'<b class="num">'+fmtPace(paceOf(R.limit,R.D))+' /'+uLabel()+'</b>, ')+'a <b class="num">'+fmtDur(R.limit)+'</b> finish. The binding cutoff is <b>'+esc(R.rows[R.limitAt].name)+'</b>.</p>':'')+
     '</div>';
 }
 
@@ -723,6 +738,7 @@ function renderChart(){
      '<div class="ctl"><span class="eyebrow">Show times as</span>'+segBtns('display',[['elapsed','Race time'],['clock','Time of day']],chart.display)+'</div>'+
      '<div class="ctl"><span class="eyebrow">Arrive ahead of cutoffs by</span>'+marginBtns()+'</div>'+
      '<div class="ctl"><span class="eyebrow">Segment column</span>'+segBtns('showSeg',[['show','Show'],['hide','Hide']],showSeg()?'show':'hide')+'</div>'+
+     (chart.adv?'<div class="ctl"><span class="eyebrow">Downhills</span>'+segBtns('descent',DESC_OPTS,chart.descent||'mixed')+'</div>':'')+
      '</div>';
   h+='<h2 class="bar purple">Pace plan</h2>';
   const nCards=R.plans.length+1, cols=nCards<=4?nCards:3;
@@ -730,7 +746,7 @@ function renderChart(){
   h+='<h2 class="bar black">Aid stations</h2>';
   h+='<div class="strip">'+strip(R)+'<div class="legend"><span><i style="background:var(--cut)"></i>Hard cutoff</span><span><i style="background:var(--accent)"></i>No posted cutoff</span></div></div>';
 
-  h+='<div class="tablebox"><table><thead><tr><th>Aid station</th><th>'+uLabel()+'</th>'+(showSeg()?'<th>Segment</th>':'')+
+  h+='<div class="tablebox"><table><thead><tr><th>Aid station</th><th>'+uLabel()+'</th>'+(showSeg()?'<th>Segment</th>':'')+(R.adv?'<th>Climb / descent ('+eLabel()+')</th>':'')+
      chart.plans.map(p=>'<th><span class="hl">'+esc(p.label)+'</span>'+fmtDur(p.time)+'</th>').join('')+
      '<th><span class="hl" style="color:#ff8a80">'+esc(chart.labels.cut)+'</span>'+fmtDur(chart.total)+'</th></tr></thead><tbody>';
   R.rows.forEach((r,i)=>{
@@ -739,12 +755,14 @@ function renderChart(){
     h+='<tr><td><span class="stn">'+esc(r.name)+(tag?'<small>'+tag+'</small>':'')+'</span></td>'+
        '<td class="num">'+dShow(r.dist).toFixed(1)+'</td>'+
        (showSeg()?'<td class="num muted">'+(r.first?'':dShow(r.seg).toFixed(1))+'</td>':'')+
+       (R.adv?'<td class="num muted">'+elevText(r)+'</td>':'')+
        R.plans.map(p=>planCell(p,i,R)).join('')+
        '<td class="cutcol"><span class="t '+(r.first?'':r.hard?'hard':'est')+'">'+showTime(r.cut)+'</span>'+cutSub+'</td></tr>';
   });
   h+='</tbody></table></div>';
   h+='<div class="banner dbcta"><p><b>Next: plan your drop bags.</b> See when you\'ll reach each drop bag and what the conditions will be, then pack for them.</p><button class="btn primary" data-act="b-open" type="button">Plan drop bags</button></div>';
-  h+='<p class="foot">Plans run at even pace wherever possible. <span class="adjkey"></span>Highlighted times were moved earlier so the runner arrives at least '+marginOf(chart)+' minutes before that posted cutoff; the pace between those points stays even. Red times are posted cutoffs; grey cutoff times are estimated at the overall cutoff pace.</p>';
+  if(R.adv) h+='<p class="foot"><b>How climbs and descents are counted.</b> Each section is turned into "effort miles": every 1,000 ft of climbing adds 1.9 miles (the ITRA trail rating rule of 100 m of climb for 1 km of distance). Descents follow the Downhills setting, based on Langmuir\'s corrections to Naismith\'s rule: Runnable takes off 0.5 mile per 1,000 ft, Mixed doesn\'t change it, and Steep or technical adds 0.5 mile. Each goal time is then shared out by effort. It doesn\'t account for slowing late in the race, heat, altitude, or night, so treat it as a better estimate, not a promise.</p>';
+  h+='<p class="foot">Plans run at '+(R.adv?'even effort':'even pace')+' wherever possible. <span class="adjkey"></span>Highlighted times were moved earlier so the runner arrives at least '+marginOf(chart)+' minutes before that posted cutoff; the '+(R.adv?'effort':'pace')+' between those points stays even. Red times are posted cutoffs; grey cutoff times are estimated '+(R.adv?'from the overall cutoff, by effort':'at the overall cutoff pace')+'.</p>';
   return h;
 }
 
@@ -765,9 +783,11 @@ function newDraft(from){
     cutoffFormat:c.cutoffFormat||'elapsed',labels:clone(c.labels),marginText:String(marginOf(c)),
     plans:c.plans.map(p=>({label:p.label,timeText:p.time!=null?fmtDur(p.time):''})),totalText:c.total!=null?fmtDur(c.total):'',
     rows:[]};
+  d.adv=!!c.adv; d.descent=c.descent||'mixed';
   if(c.manual){ d.mode='bags'; d.wins=c.stations.map((s,i)=>{const w=c.windows&&c.windows[i]; return w?{e:fmtClock12(c.startTime+w.early),l:fmtClock12(c.startTime+w.late)}:{e:'',l:''}}); }
   d.rows=c.stations.map(s=>({name:s.name,distText:s.dist==null?'':String(+(eu==='km'?s.dist*KM:s.dist).toFixed(2)),
-    cutText:s.cutoff==null?'':(d.cutoffFormat==='clock'?fmtClock12(c.startTime+s.cutoff):fmtDur(s.cutoff))}));
+    cutText:s.cutoff==null?'':(d.cutoffFormat==='clock'?fmtClock12(c.startTime+s.cutoff):fmtDur(s.cutoff)),
+    gainText:s.gain==null?'':String(Math.round(eu==='km'?s.gain/FT_PER_M:s.gain)),lossText:s.loss==null?'':String(Math.round(eu==='km'?s.loss/FT_PER_M:s.loss))}));
   return d;
 }
 
@@ -777,7 +797,8 @@ function readWizInputs(){
   if(wiz.step===1){
     const u=document.querySelector('input[name=w-unit]:checked');if(u)wiz.entryUnit=u.value;
     const f=document.querySelector('input[name=w-cf]:checked'); if(f) wiz.cutoffFormat=f.value;
-    wiz.rows.forEach((r,i)=>{const n=q('w-n'+i),d=q('w-d'+i),c=q('w-c'+i);if(n)r.name=n.value;if(d)r.distText=d.value;if(c)r.cutText=c.value});
+    wiz.rows.forEach((r,i)=>{const n=q('w-n'+i),d=q('w-d'+i),c=q('w-c'+i),up=q('w-up'+i),dn=q('w-dn'+i);if(n)r.name=n.value;if(d)r.distText=d.value;if(c)r.cutText=c.value;if(up)r.gainText=up.value;if(dn)r.lossText=dn.value});
+    const ds=document.querySelector('input[name=w-desc]:checked'); if(ds) wiz.descent=ds.value;
   }
   if(wiz.step===2){wiz.name=q('w-name').value;wiz.startDate=q('w-date').value;wiz.startText=q('w-start').value;if(wiz.mode==='bags')wiz.display='clock';const d=document.querySelector('input[name=w-disp]:checked');if(d)wiz.display=d.value}
   if(wiz.step===3&&wiz.mode==='bags'){ wiz.wins.forEach((w,i)=>{const e=q('w-e'+i),l=q('w-l'+i);if(e)w.e=e.value;if(l)w.l=l.value}); return; }
@@ -788,6 +809,8 @@ function readWizInputs(){
   }
 }
 
+// Elevation cells: blank is unknown (counted as 0); accepts 1,200 or +1200 or 1200 ft. Returns false if unreadable.
+function parseElev(t){ t=String(t||'').replace(/[,+\s]|ft|feet|m\b|-/gi,''); if(!t) return null; const v=parseFloat(t); return isNaN(v)||v<0?false:v; }
 function startMin(){const v=parseClock(wiz.startText);return (v==null||isNaN(v))?NaN:v}
 
 function buildStations(syntaxOnly){
@@ -815,9 +838,17 @@ function buildStations(syntaxOnly){
       }
       prevCut=cut;
     }
-    out.push({name,dist:wiz.entryUnit==='km'?d/KM:d,cutoff:cut});
+    const st={name,dist:wiz.entryUnit==='km'?d/KM:d,cutoff:cut};
+    if(wiz.adv&&wiz.mode!=='bags'&&i>0){
+      for(const [f,t,lab] of [['gain',r.gainText,'climb'],['loss',r.lossText,'descent']]){
+        const v=parseElev(t); if(v===false) return {err:'The '+lab+' for '+name+' should be a number, like 1200.'};
+        if(v!=null) st[f]=wiz.entryUnit==='km'?v*FT_PER_M:v;
+      }
+    }
+    out.push(st);
   }
   if(out.length<2) return {err:'Add at least a start and a finish.'};
+  if(wiz.adv&&wiz.mode!=='bags'&&!out.some(s=>s.gain||s.loss)) return {err:'Add the climb and descent for your sections, or switch pacing back to Even pace.'};
   return {stations:out,lastCut:prevCut};
 }
 
@@ -878,7 +909,7 @@ function finishWizard(){
     chart={isExample:false,manual:true,name:wiz.name.trim(),unit:wiz.entryUnit,entryUnit:wiz.entryUnit,display:'clock',detail:'buffer',startDate:wiz.startDate,startTime:startMin(),
       cutoffFormat:'clock',labels:{cut:'Latest'},plans:[],total:wv.wins[wv.wins.length-1].late,margin:0,stations:b.stations,windows:wv.wins};
   } else {
-  chart={isExample:false,name:wiz.name.trim(),unit:wiz.entryUnit,entryUnit:wiz.entryUnit,display:wiz.display,detail:wiz.detail,
+  chart={isExample:false,adv:!!wiz.adv,descent:wiz.descent||'mixed',name:wiz.name.trim(),unit:wiz.entryUnit,entryUnit:wiz.entryUnit,display:wiz.display,detail:wiz.detail,
     startDate:wiz.startDate,startTime:startMin(),cutoffFormat:wiz.cutoffFormat,labels:wiz.labels,
     plans:wiz.plans.map(p=>({label:p.label.trim(),time:parseDur(p.timeText)})).sort((a,b)=>a.time-b.time),total:parseDur(wiz.totalText),margin:+wiz.marginText.trim(),stations:b.stations};
   }
@@ -886,6 +917,7 @@ function finishWizard(){
     const id='r_'+Date.now().toString(36);
     store.races.push({id,created:Date.now(),updated:Date.now(),mode:wiz.mode||'basic',chart:null,bags:null}); store.cur=id; bp=bpFresh();
   }
+  { const r=curRace(); if(r&&!chart.manual) r.mode=chart.adv?'advanced':'basic'; }
   bp.locs=bp.locs||{}; bp.locText=bp.locText||{};
   wiz.rows.forEach((r,i)=>{ const st=b.stations[i]; if(!st) return; const k=stKey(st); if(okLoc(bp.locs[k])) return;
     if(r.lat!=null&&r.lon!=null) bp.locs[k]={name:r.lat.toFixed(3)+', '+r.lon.toFixed(3),lat:r.lat,lon:r.lon}; else if(r.place) bp.locText[k]=r.place; });
@@ -908,18 +940,24 @@ function renderWizard(){
        '<div class="field" style="max-width:none"><span class="flabel">Distances are in</span><span class="help">You can switch the chart between miles and kilometers later.</span><div class="choices">'+radio('w-unit','mi',w.entryUnit,'Miles','')+radio('w-unit','km',w.entryUnit,'Kilometers','')+'</div></div>'+
        (bags?'':'<div class="field" style="max-width:none"><span class="flabel">The race posts cutoffs as</span><span class="help">Clock times are converted using the start time in step 2.</span><div class="choices">'+radio('w-cf','elapsed',w.cutoffFormat,'Race time','e.g. 14:25')+radio('w-cf','clock',w.cutoffFormat,'Time of day','e.g. 8:25 PM')+'</div></div>')+
        '</div>';
-    h+='<p class="preview" style="margin:0">Missed one? Add it, then drag it into place with the ⠿ handle.</p>';
-    h+='<div class="stbox"><table class="sttable rowsort"><thead><tr><th></th><th>Name</th><th>Distance ('+u+')</th>'+(bags?'':'<th>Hard cutoff</th>')+'<th></th></tr></thead><tbody>';
+    const adv=!bags&&w.adv, eu=w.entryUnit==='km'?'m':'ft';
+    if(!bags) h+='<div class="field" style="max-width:none"><span class="flabel">Pacing</span><span class="help">Adjusting for climbs and descents gives climbing sections more time and runnable downhills less. You\'ll add the climb and descent for each section.</span>'+
+      '<div class="seg" role="group" style="width:fit-content;max-width:100%"><button type="button" data-act="wadv" data-v="0" aria-pressed="'+!adv+'">Even pace</button><button type="button" data-act="wadv" data-v="1" aria-pressed="'+adv+'">Adjust for climbs and descents</button></div></div>';
+    if(adv) h+='<div class="field" style="max-width:none"><span class="flabel">How runnable are the downhills?</span><span class="help">Climbing always adds time. This sets whether descents give some back. Not sure? Mixed is a safe pick for most 100s.</span><div class="choices">'+
+      radio('w-desc','runnable',w.descent,'Runnable','Smooth trail or road, you can let it fly')+radio('w-desc','mixed',w.descent,'Mixed','Some runnable, some careful')+radio('w-desc','steep',w.descent,'Steep or technical','Rocky, rooty, or steep enough to slow you down')+'</div></div>';
+    h+='<p class="preview" style="margin:0">Missed one? Add it, then drag it into place with the ⠿ handle.'+(adv?' Climb and descent are for the section that ends at that aid station, in '+(eu==='ft'?'feet':'meters')+'.':'')+'</p>';
+    h+='<div class="stbox"><table class="sttable rowsort"><thead><tr><th></th><th>Name</th><th>Distance ('+u+')</th>'+(adv?'<th>Climb ('+eu+')</th><th>Descent ('+eu+')</th>':'')+(bags?'':'<th>Hard cutoff</th>')+'<th></th></tr></thead><tbody>';
     w.rows.forEach((r,i)=>{
       const first=i===0,last=i===w.rows.length-1;
       h+='<tr><td class="idx num">'+(first||last?(first?'S':'F'):'<button type="button" class="grip" data-grip="'+i+'" aria-label="Drag to move '+esc(r.name||'this aid station')+'" title="Drag to move">⠿</button>')+'</td>'+
          '<td><input class="in" id="w-n'+i+'" value="'+esc(r.name)+'" placeholder="'+(first?'Start':last?'Finish':'Aid station name')+'"></td>'+
          '<td><input class="in num" id="w-d'+i+'" inputmode="decimal" value="'+(first?'0':esc(r.distText))+'"'+(first?' readonly':'')+' placeholder="0.0"></td>'+
+         (adv?(first?'<td></td><td></td>':'<td><input class="in num" id="w-up'+i+'" inputmode="numeric" value="'+esc(r.gainText||'')+'" placeholder="0" aria-label="Climb into '+esc(r.name||'this aid station')+'"></td><td><input class="in num" id="w-dn'+i+'" inputmode="numeric" value="'+esc(r.lossText||'')+'" placeholder="0" aria-label="Descent into '+esc(r.name||'this aid station')+'"></td>'):'')+
          (bags?'':'<td>'+(first||last?'<span class="note">'+(first?'None':'Set in step 3')+'</span>':'<input class="in num" id="w-c'+i+'" value="'+esc(r.cutText)+'" placeholder="Optional">')+'</td>')+
          '<td class="rowtools">'+(first||last?'':'<button type="button" class="mv" data-act="rowup" data-i="'+i+'" aria-label="Move '+esc(r.name||'row')+' up"'+(i===1?' disabled':'')+'>↑</button><button type="button" class="mv" data-act="rowdown" data-i="'+i+'" aria-label="Move '+esc(r.name||'row')+' down"'+(i===w.rows.length-2?' disabled':'')+'>↓</button><button type="button" class="rm" data-act="rmrow" data-i="'+i+'" aria-label="Remove '+esc(r.name||'row')+'">×</button>')+'</td></tr>';
     });
     h+='</tbody></table></div><div><button type="button" class="btn" data-act="addrow">Add aid station</button></div>';
-    h+='<details class="paste"><summary>Paste rows from a spreadsheet</summary><p class="preview">One station per line: name, distance, cutoff (optional), separated by tabs or commas. The first line is the start and the last line is the finish. This replaces the rows above.</p><textarea id="w-paste" class="in" placeholder="Group Camp	0&#10;Pickett	6.8&#10;Charit	19.2	6:00"></textarea><div style="margin-top:8px"><button type="button" class="btn" data-act="paste">Use these rows</button></div></details>';
+    h+='<details class="paste"><summary>Paste rows from a spreadsheet</summary><p class="preview">One station per line: name, distance, cutoff (optional)'+(adv?', climb, descent':'')+', separated by tabs or commas. The first line is the start and the last line is the finish. This replaces the rows above.</p><textarea id="w-paste" class="in" placeholder="Group Camp	0&#10;Pickett	6.8&#10;Charit	19.2	6:00"></textarea><div style="margin-top:8px"><button type="button" class="btn" data-act="paste">Use these rows</button></div></details>';
     h+=renderImport();
   }
   if(w.step===2){
@@ -972,7 +1010,7 @@ function parsePaste(txt){
     const p=l.includes('\t')?l.split('\t'):l.split(',');
     const cells=p.map(s=>s.trim());
     if(cells.length<2||isNaN(parseFloat(cells[1]))) return; // skip header lines
-    rows.push({name:cells[0],distText:cells[1],cutText:cells[2]||''});
+    rows.push({name:cells[0],distText:cells[1],cutText:cells[2]||'',gainText:cells[3]||'',lossText:cells[4]||''});
   });
   if(rows.length<2) return null;
   if(parseFloat(rows[0].distText)!==0) rows.unshift({name:'Start',distText:'0',cutText:''});
@@ -1037,7 +1075,7 @@ function openRace(id,to){
   view=to||'race'; render(); window.scrollTo(0,0);
 }
 function newRace(mode){
-  wiz=newDraft(null); wiz.mode=mode; wizErr=''; wiz.isNew=true; view='wiz'; render(); window.scrollTo(0,0);
+  wiz=newDraft(null); wiz.mode=mode; if(mode==='advanced') wiz.adv=true; wizErr=''; wiz.isNew=true; view='wiz'; render(); window.scrollTo(0,0);
 }
 let confirmDel=null;
 
@@ -1093,7 +1131,7 @@ function renderStart(){
   h+='<section class="dbpanel"><div><h2>What would you like to do?</h2><p class="preview" style="margin-top:6px;max-width:70ch">We recommend starting with a pace chart. Your drop bag plan uses it to know when you\'ll reach each bag. If you skip it, you\'ll type in your own arrival times for each aid station, and the plan won\'t be as accurate.</p></div>'+
     '<div class="modes">'+
     '<button type="button" class="mode rec" data-act="r-mode" data-mode="basic"><span class="badge">Recommended</span><b>Pace chart calculator</b><span>Goal and cutoff times at every aid station, using even pacing. Then plan your drop bags from it.</span></button>'+
-    '<button type="button" class="mode" disabled aria-disabled="true"><span class="badge soon">Coming soon</span><b>Advanced pace chart</b><span>Factors in elevation gain and loss for each segment, so climbs take longer and the flats and downhills take less.</span></button>'+
+    '<button type="button" class="mode" data-act="r-mode" data-mode="advanced"><span class="badge">New</span><b>Advanced pace chart</b><span>Factors in the climb and descent of each section, so climbs get more time and runnable downhills less. Then plan your drop bags from it.</span></button>'+
     '<button type="button" class="mode" data-act="r-mode" data-mode="bags"><b>Drop bags only</b><span>Skip the pace chart. You\'ll enter your own arrival time window for each aid station.</span></button>'+
     '</div></section>';
   return h;
@@ -1922,10 +1960,11 @@ app.addEventListener('click',e=>{
   }
   if(a.startsWith('b-')){ if(Date.now()-dragEndedAt<300) return; dbAct(a,b);return}
   if(a==='new'){wiz=newDraft(null);wizErr='';view='wiz';copyText=null;render();window.scrollTo(0,0)}
-  if(a==='edit'){wiz=newDraft(chart);wiz.editing=true;wiz.mode=chart.manual?'bags':'basic';wizErr='';view='wiz';copyText=null;render();window.scrollTo(0,0)}
+  if(a==='edit'){wiz=newDraft(chart);wiz.editing=true;wiz.mode=chart.manual?'bags':(chart.adv?'advanced':'basic');wizErr='';view='wiz';copyText=null;render();window.scrollTo(0,0)}
   if(a==='cancel'){view=wiz&&wiz.isNew?'start':'race';wiz=null;render();window.scrollTo(0,0)}
   if(a==='example'){wiz=newDraft(EXAMPLE);wizErr='';render()}
   if(a==='back'){readWizInputs();wizErr='';wiz.step--;render()}
+  if(a==='wadv'){readWizInputs();wiz.adv=b.dataset.v==='1';wizErr='';render();return}
   if(a==='addrow'){readWizInputs();wiz.rows.splice(wiz.rows.length-1,0,{name:'',distText:'',cutText:''});render();
     const el=document.getElementById('w-n'+(wiz.rows.length-2)); if(el) el.focus()}
   if(a==='addplan'){readWizInputs(); if(wiz.plans.length<MAX_PLANS){
@@ -2044,7 +2083,7 @@ const XLSX_URL='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min
 const PDFJS_URL='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
 const PDFJS_WORKER='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 let imp=null;   // {busy, err, file, rows:[[...]], head:int, map:{name,dist,cut,lat,lon,place}}
-const IMP_FIELDS=[['name','Aid station name'],['dist','Distance'],['cut','Cutoff'],['lat','Latitude'],['lon','Longitude'],['place','Town or location']];
+const IMP_FIELDS=[['name','Aid station name'],['dist','Distance'],['cut','Cutoff'],['gain','Climb'],['loss','Descent'],['lat','Latitude'],['lon','Longitude'],['place','Town or location']];
 async function readSheet(file){
   if(!window.XLSX) await loadScript(XLSX_URL);
   const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
@@ -2082,13 +2121,13 @@ async function readPdf(file){
 const isNum=v=>/^-?\d+(?:\.\d+)?$/.test(String(v).replace(/,/g,'').trim());
 const isTimeish=v=>/^\d{1,3}:\d{2}(\s*[ap]\.?m\.?)?$/i.test(String(v).trim())||/^\d{1,2}\s*[ap]\.?m\.?$/i.test(String(v).trim());
 function guessImport(rows){
-  const kw={name:/aid|station|name|checkpoint|\bcp\b/i,dist:/mile|\bmi\b|\bkm\b|dist/i,cut:/cut.?off|close|closes|cut/i,lat:/\blat/i,lon:/\blon|\blng|long/i,place:/town|city|place|location|address|access/i};
+  const kw={name:/aid|station|name|checkpoint|\bcp\b/i,dist:/mile|\bmi\b|\bkm\b|dist/i,cut:/cut.?off|close|closes|cut/i,lat:/\blat/i,lon:/\blon|\blng|long/i,place:/town|city|place|location|address|access/i,gain:/gain|climb|ascent|\bup\b|vert.*\+/i,loss:/loss|descent|descend|\bdown\b/i};
   // Header row: the first row in the top ten whose cells mostly aren't numbers and that names a distance column.
   let head=-1;
   for(let i=0;i<Math.min(rows.length,10);i++){ const r=rows[i]; if(r.some(c=>kw.dist.test(c))&&r.filter(c=>c&&!isNum(c)).length>=2){head=i;break;} }
-  const map={name:-1,dist:-1,cut:-1,lat:-1,lon:-1,place:-1};
+  const map={name:-1,dist:-1,cut:-1,lat:-1,lon:-1,place:-1,gain:-1,loss:-1};
   if(head>=0){ const r=rows[head];
-    ['lat','lon','dist','cut','name','place'].forEach(f=>{ const j=r.findIndex((c,j)=>kw[f].test(c)&&!Object.values(map).includes(j)); if(j>=0) map[f]=j; }); }
+    ['gain','loss','lat','lon','dist','cut','name','place'].forEach(f=>{ const j=r.findIndex((c,j)=>kw[f].test(c)&&!Object.values(map).includes(j)); if(j>=0) map[f]=j; }); }
   const body=rows.slice(head+1), ncol=Math.max(...rows.map(r=>r.length));
   const col=j=>body.map(r=>r[j]||'').filter(Boolean), share=(j,f)=>{const v=col(j);return v.length?v.filter(f).length/v.length:0};
   const used=()=>Object.values(map);
@@ -2107,7 +2146,7 @@ function importRows(){
   const out=[];
   rows.slice(head+1).forEach(r=>{ const d=g(r,'dist').replace(/,/g,''); if(!isNum(d)) return;   // skip notes, totals, repeated headers
     const la=parseCoord(g(r,'lat'),90), lo=parseCoord(g(r,'lon'),180);
-    out.push({name:g(r,'name'),distText:String(+d),cutText:g(r,'cut'),lat:isNaN(la)?null:la,lon:isNaN(lo)?null:lo,place:g(r,'place')}); });
+    out.push({name:g(r,'name'),distText:String(+d),cutText:g(r,'cut'),gainText:g(r,'gain'),lossText:g(r,'loss'),lat:isNaN(la)?null:la,lon:isNaN(lo)?null:lo,place:g(r,'place')}); });
   return out;
 }
 async function startImport(file){
@@ -2133,6 +2172,7 @@ function applyImport(){
   rows[0].cutText='';
   const last=rows[rows.length-1]; if(last.cutText){ wiz.totalText=last.cutText; last.cutText=''; }
   if(rows.some(r=>/[ap]\.?m/i.test(r.cutText))) wiz.cutoffFormat='clock';
+  if(rows.some(r=>r.gainText||r.lossText)&&wiz.mode!=='bags') wiz.adv=true;
   wiz.rows=rows; imp=null; wizErr=''; render();
 }
 function renderImport(){
@@ -2147,7 +2187,7 @@ function renderImport(){
     h+='<div class="impmap"><b>Which column is which?</b><div class="impgrid">'+IMP_FIELDS.map(([f,l])=>'<label><span>'+l+'</span><select class="in" data-impf="'+f+'"><option value="-1">Not in this file</option>'+
       Array.from({length:ncol},(_,j)=>'<option value="'+j+'"'+(imp.map[f]===j?' selected':'')+'>'+esc(colName(j))+'</option>').join('')+'</select></label>').join('')+'</div>';
     const prev=importRows();
-    h+='<p class="preview">'+prev.length+' aid station'+(prev.length===1?'':'s')+' found'+(prev.some(r=>r.lat!=null)?', with GPS coordinates':'')+(prev.some(r=>r.place)?', with locations':'')+'. First few:</p>';
+    h+='<p class="preview">'+prev.length+' aid station'+(prev.length===1?'':'s')+' found'+(prev.some(r=>r.lat!=null)?', with GPS coordinates':'')+(prev.some(r=>r.place)?', with locations':'')+(prev.some(r=>r.gainText||r.lossText)?', with climb and descent':'')+'. First few:</p>';
     if(prev.length) h+='<div class="stbox"><table class="sttable"><thead><tr><th></th><th>Name</th><th>Distance</th><th>Cutoff</th><th>Location</th></tr></thead><tbody>'+
       prev.slice(0,6).map((r,i)=>'<tr><td class="idx num">'+(i+1)+'</td><td>'+esc(r.name)+'</td><td class="num">'+esc(r.distText)+'</td><td class="num">'+esc(r.cutText)+'</td><td class="num">'+(r.lat!=null?r.lat+', '+r.lon:esc(r.place))+'</td></tr>').join('')+'</tbody></table></div>';
     h+='<div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary" data-act="impapply"'+(prev.length?'':' disabled')+'>Fill the table with these</button><button type="button" class="btn" data-act="impcancel">Cancel</button></div>'+
