@@ -272,10 +272,11 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .locbox{border-top:1px solid var(--grey);padding-top:16px;display:flex;flex-direction:column;gap:10px;max-width:720px}
 .locbox h3{font-size:1.15rem}
 .locbox .preview{margin:0}
-.locset{margin:0}
+.locset{margin:4px 0 0}
+.raceloc{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--grey);padding-top:12px}
 .geohits{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
 .coordrows{display:flex;flex-direction:column;gap:8px;margin-top:8px}
-.coordrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,15rem) auto;gap:4px 8px;align-items:center}
+.coordrow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,15rem) 5.5rem;gap:4px 8px;align-items:center}
 .coordrow small{grid-column:2/-1}
 .coordrow .errs{color:var(--cut);font-weight:600}
 @media (max-width:560px){.coordrow{grid-template-columns:minmax(0,1fr) auto}.coordrow b,.coordrow small{grid-column:1/-1}}
@@ -1210,10 +1211,12 @@ function dbWx(from,to,d0,d1){
 function evText(ev){const c=clockParts(ev.el);return (ev.type==='sunset'?'Sunset ':'Sunrise ')+dayLabel(c.day)+' '+fmtClock12(ev.at)}
 
 // What to fetch: the race location plus every aid station the runner gave a location.
+function raceLoc(){ if(okLoc(bp.loc)) return bp.loc; return chart&&chart.stations?chart.stations.map(st=>(bp.locs||{})[stKey(st)]).find(okLoc)||null:null; }
 function wxPlan(){
-  if(!chart||!chart.startDate||!okLoc(bp.loc)) return null;
+  const RL=raceLoc();
+  if(!chart||!chart.startDate||!RL) return null;
   const R=compute(chart), span=Math.ceil((chart.startTime+R.T)/1440)+1;
-  const locs=[{key:'race',lat:bp.loc.lat,lon:bp.loc.lon}];
+  const locs=[{key:'race',lat:RL.lat,lon:RL.lon}];
   Object.entries(bp.locs||{}).forEach(([k,l])=>{ if(okLoc(l)&&chart.stations.some(s=>stKey(s)===k)) locs.push({key:'s:'+k,lat:l.lat,lon:l.lon}); });
   const start=baseUTC(), end=start+(span-1)*864e5, today=Date.parse(isoDay(Date.now()));
   const kind=(end-today)/864e5<=15&&(start-today)>-864e5*3?'forecast':'typical';
@@ -1320,43 +1323,49 @@ async function resolvePending(){
 }
 
 function wxBanner(){
-  if(!okLoc(bp.loc)) return '<div class="banner"><p><b>Add the race location</b> on the Drop bags step to get the forecast and real sunrise and sunset times. Until then, conditions are a sample day.</p></div>';
+  if(!raceLoc()) return '<div class="banner"><p><b>Add locations</b> on the Drop bags step to get the forecast and real sunrise and sunset times. Until then, conditions are a sample day.</p></div>';
   if(!chart.startDate) return '<div class="banner"><p><b>Add the race date</b> to get the weather.</p></div>';
   if(wxBusy) return '<div class="banner"><p><b>Getting the weather...</b></p></div>';
   if(bp.wx&&bp.wx.err) return '<div class="banner"><p><b>'+esc(bp.wx.err)+'</b> Conditions below are a sample day until it loads.</p><button type="button" class="btn sm" data-act="b-wx">Try again</button></div>';
   if(!hasWx()) return '<div class="banner"><p>Weather hasn\'t loaded yet.</p><button type="button" class="btn sm" data-act="b-wx">Get weather</button></div>';
-  const n=Object.keys(bp.wx.locs).length-1, where=n?esc(bp.loc.name)+' and '+n+' aid station location'+(n>1?'s':''):esc(bp.loc.name);
+  const n=Object.keys(bp.wx.locs).length-1, where=okLoc(bp.loc)?(n?esc(bp.loc.name)+' and '+n+' aid station location'+(n>1?'s':''):esc(bp.loc.name)):n+' aid station location'+(n>1?'s':'');
   const at=new Date(bp.wx.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
   if(bp.wx.kind==='forecast') return '<div class="banner"><p><b>Forecast for '+where+'</b>, updated '+esc(at)+'. Forecasts change, so check again the day before you pack.</p><button type="button" class="btn sm" data-act="b-wx">Refresh</button></div>';
   const ys=(bp.wx.locs.race.years||[]);
   return '<div class="banner"><p><b>Typical weather for '+where+'</b> on your race dates'+(ys.length?' in '+ys.join(', '):'')+'. Warnings use the coldest and hottest of those years. The real forecast shows up within about two weeks of race day.</p></div>';
 }
 
+function stLocRow(s,i){
+  const k=stKey(s), L=(bp.locs||{})[k], g=stGeo[k], last=i===chart.stations.length-1;
+  const label=i===0?'Start':last?'Finish':s.name;
+  return '<div class="coordrow"><b>'+esc(label)+(i===0||last?'':' <span class="muted num">'+dShow(s.dist).toFixed(1)+' '+uLabel()+'</span>')+'</b>'+
+    '<input class="in" data-stloc="'+esc(k)+'" value="'+esc(okLoc(L)?L.name:((bp.locText||{})[k]||''))+'" placeholder="Town or GPS" autocomplete="off">'+
+    '<button type="button" class="btn sm" data-act="b-stloc" data-k="'+esc(k)+'"'+(g&&g.busy?' disabled':'')+'>'+(g&&g.busy?'...':okLoc(L)?'Update':'Set')+'</button>'+
+    (okLoc(L)&&!parseLatLon(L.name)?'<small class="muted num">'+L.lat.toFixed(3)+', '+L.lon.toFixed(3)+'</small>':'')+
+    (g&&g.err?'<small class="errs">'+esc(g.err)+'</small>':'')+
+    (g&&g.alts?'<small>Not it? '+g.alts.map((a,j)=>'<button type="button" class="linkbtn" data-act="b-stalt" data-k="'+esc(k)+'" data-j="'+j+'">'+esc(a.name)+'</button>').join(' · ')+'</small>':'')+
+    '</div>';
+}
 function dbLocBox(){
-  let h='<div class="locbox"><h3>Where is the race?</h3><p class="preview">Used for the forecast and sunrise and sunset times. Only locations and dates are sent to the weather service.</p>';
-  if(okLoc(bp.loc)) h+='<p class="locset"><b>'+esc(bp.loc.name)+'</b> '+(parseLatLon(bp.loc.name)?'':'<span class="muted num">('+bp.loc.lat.toFixed(3)+', '+bp.loc.lon.toFixed(3)+')</span>')+' <button type="button" class="linkbtn" data-act="b-locclear">Change</button></p>';
+  const picked=new Set(bp.picks||[]), st=chart.stations, last=st.length-1;
+  let h='<div class="locbox"><h3>Where are your drop bags?</h3>'+
+    '<p class="preview">Give each drop bag station a nearby town or its GPS coordinates. The weather and daylight for each stretch come from the closest location, which matters on long courses where the weather changes along the way. Only locations and dates are sent to the weather service.</p>';
+  const rows=st.map((s,i)=>i===0||picked.has(stKey(s))?stLocRow(s,i):'').join('');
+  h+='<div class="coordrows">'+(picked.size?rows:'<p class="preview">Check your drop bag stations above, and they\'ll show up here.</p>')+'</div>';
+  // Race location: the fallback for every station without its own.
+  h+='<div class="raceloc"><div><b>Race location</b> <span class="muted">(used for any aid station without its own)</span></div>';
+  if(okLoc(bp.loc)) h+='<p class="locset">'+esc(bp.loc.name)+' '+(parseLatLon(bp.loc.name)?'':'<span class="muted num">('+bp.loc.lat.toFixed(3)+', '+bp.loc.lon.toFixed(3)+')</span>')+' <button type="button" class="linkbtn" data-act="b-locclear">Change</button></p>';
   else {
     h+='<div class="addrow"><input class="in" id="db-geo" placeholder="Town near the race, or GPS like 36.54, -84.70" autocomplete="off"><button type="button" class="btn" data-act="b-geo"'+(geoBusy?' disabled':'')+'>'+(geoBusy?'Searching...':'Search')+'</button></div>';
     if(geoErr) h+='<p class="err" role="alert">'+esc(geoErr)+'</p>';
     if(geoHits&&geoHits.length) h+='<div class="geohits">'+geoHits.map((g,i)=>'<button type="button" class="btn" data-act="b-geopick" data-i="'+i+'">'+esc(g.name)+'</button>').join('')+'</div>';
   }
-  if(okLoc(bp.loc)){
-    const n=Object.values(bp.locs||{}).filter(okLoc).length;
-    h+='<details class="paste"'+(n?' open':'')+'><summary>Aid station locations'+(n?' ('+n+' set)':'')+'</summary>'+
-       '<p class="preview">On long courses the weather can be very different from the start. Give any aid station its own town or GPS coordinates, and the weather for each stretch uses the closest one. Stations left blank use the race location.</p><div class="coordrows">';
-    chart.stations.forEach((s,i)=>{ const k=stKey(s), L=(bp.locs||{})[k], g=stGeo[k];
-      const label=i===0?'Start':i===chart.stations.length-1?'Finish':s.name;
-      h+='<div class="coordrow"><b>'+esc(label)+(i===0||i===chart.stations.length-1?'':' <span class="muted num">'+dShow(s.dist).toFixed(1)+' '+uLabel()+'</span>')+'</b>'+
-         '<input class="in" data-stloc="'+esc(k)+'" value="'+esc(okLoc(L)?L.name:((bp.locText||{})[k]||''))+'" placeholder="Town or GPS" autocomplete="off">'+
-         '<button type="button" class="btn sm" data-act="b-stloc" data-k="'+esc(k)+'"'+(g&&g.busy?' disabled':'')+'>'+(g&&g.busy?'...':'Set')+'</button>'+
-         (okLoc(L)&&!parseLatLon(L.name)?'<small class="muted num">'+L.lat.toFixed(3)+', '+L.lon.toFixed(3)+'</small>':'')+
-         (g&&g.err?'<small class="errs">'+esc(g.err)+'</small>':'')+
-         (g&&g.alts?'<small>Not it? '+g.alts.map((a,j)=>'<button type="button" class="linkbtn" data-act="b-stalt" data-k="'+esc(k)+'" data-j="'+j+'">'+esc(a.name)+'</button>').join(' · ')+'</small>':'')+
-         '</div>'; });
-    h+='</div><details class="paste" style="margin-top:10px"'+(pasteErr?' open':'')+'><summary>Paste coordinates for every aid station</summary><p class="preview">One aid station per line, in race order, with latitude and longitude, like <span class="num">Pickett, 36.55, -84.80</span>. You can paste straight from a spreadsheet.</p>'+
-       '<textarea id="db-pastelocs" class="in" placeholder="Start, 36.49, -84.70&#10;Pickett, 36.55, -84.80"></textarea>'+(pasteErr?'<p class="err" role="alert">'+esc(pasteErr)+'</p>':'')+
-       '<div style="margin-top:8px"><button type="button" class="btn" data-act="b-pastelocs">Use these</button></div></details></details>';
-  }
+  h+='</div>';
+  const others=st.map((s,i)=>i!==0&&!picked.has(stKey(s))?stLocRow(s,i):'').join(''), nOther=st.filter((s,i)=>i!==0&&!picked.has(stKey(s))&&okLoc((bp.locs||{})[stKey(s)])).length;
+  h+='<details class="paste"'+(nOther?' open':'')+'><summary>Other aid stations (optional)'+(nOther?' · '+nOther+' set':'')+'</summary><p class="preview">More locations make the weather between drop bags more accurate.</p><div class="coordrows">'+others+'</div></details>';
+  h+='<details class="paste"'+(pasteErr?' open':'')+'><summary>Paste coordinates for every aid station</summary><p class="preview">One aid station per line, in race order, with latitude and longitude, like <span class="num">Pickett, 36.55, -84.80</span>. You can paste straight from a spreadsheet.</p>'+
+     '<textarea id="db-pastelocs" class="in" placeholder="Start, 36.49, -84.70&#10;Pickett, 36.55, -84.80"></textarea>'+(pasteErr?'<p class="err" role="alert">'+esc(pasteErr)+'</p>':'')+
+     '<div style="margin-top:8px"><button type="button" class="btn" data-act="b-pastelocs">Use these</button></div></details>';
   return h+'</div>';
 }
 function fmtHrs(min){min=Math.round(min);const h=Math.floor(min/60),m=min%60;return h?(h+' hr'+(m?' '+m+' min':'')):m+' min'}
