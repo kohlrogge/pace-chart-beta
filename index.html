@@ -1817,32 +1817,58 @@ function buildBagPdf(jsPDF){
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
   doc.text((chart.startDate?new Date(chart.startDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})+'  |  ':'')+'Start '+fmtClock12(chart.startTime),M+74,68);
   doc.setFillColor(196,211,213); doc.rect(0,84,W,8,'F');
-  let y=118;
-  const ensure=need=>{ if(y+need>H-36){ doc.addPage(); y=48; } };
-  const box=(x,yy,done)=>{ doc.setDrawColor(17,17,17); doc.setLineWidth(1.2); doc.rect(x,yy-9,11,11);
-    if(done){ doc.setDrawColor(15,72,90); doc.setLineWidth(1.8); doc.line(x+2,yy-3.5,x+4.6,yy-0.8); doc.line(x+4.6,yy-0.8,x+9.5,yy-7); } };
-  const section=(title,sub,rows,teal)=>{
-    ensure(48+Math.min(rows.length,3)*20);
-    if(teal) doc.setFillColor(15,72,90); else doc.setFillColor(0,0,0);
-    doc.rect(M,y,W-2*M,24,'F'); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.text(title,M+10,y+16);
-    if(sub){ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.text(sub,W-M-10,y+16,{align:'right'}); }
-    y+=42;
-    if(!rows.length){ doc.setFont('helvetica','italic'); doc.setFontSize(10); doc.setTextColor(110,124,130); doc.text('Nothing packed yet.',M+10,y); y+=24; return; }
-    rows.forEach(r=>{
-      const lines=doc.splitTextToSize(r.text,W-2*M-40); ensure(lines.length*14+8);
-      box(M+10,y,r.done); doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(17,17,17); doc.text(lines,M+30,y);
-      y+=lines.length*14+6;
-    });
-    y+=14;
-  };
+  // Cards in three columns like the app's checklist. Each card goes into the shortest column; a new page starts when it won't fit.
+  const top0=112, GAP=12, NC=3, CW=(W-2*M-GAP*(NC-1))/NC, PAD=8, LH=11.5, BOT=H-30;
+  let cols=Array(NC).fill(top0);
+  const box=(x,yy,done)=>{ doc.setDrawColor(17,17,17); doc.setLineWidth(1); doc.rect(x,yy-8,9,9);
+    if(done){ doc.setDrawColor(15,72,90); doc.setLineWidth(1.6); doc.line(x+1.6,yy-3.2,x+3.8,yy-0.9); doc.line(x+3.8,yy-0.9,x+7.9,yy-6.2); } };
   // The PDF fonts can't draw emoji, so the poop emoji prints as words.
   const clean=t=>String(t).replace(/\u{1F4A9}/gu,'Bathroom stop').replace(/[^\x00-\xFF]/g,'').trim();
-  if(bp.morning.length) section('Race morning','',bp.morning.map(m=>({text:clean(m.text)||'To-do',done:m.done})));
+  const card=(title,sub,rows,teal)=>{
+    doc.setFontSize(9.5); doc.setFont('helvetica','normal');
+    const tw=CW-2*PAD-14, wrapped=rows.map(r=>doc.splitTextToSize(r.text,tw)), rh=wrapped.map(l=>l.length*LH+3);
+    doc.setFontSize(8); const subL=sub?doc.splitTextToSize(sub,CW-2*PAD):[];
+    const hh=22, subH=subL.length?subL.length*10+4:0;
+    const hOf=(from,to,first)=>hh+PAD+(first?subH:0)+(rows.length?rh.slice(from,to).reduce((t,v)=>t+v,0):LH+2)+PAD;
+    let i=0, first=true;
+    while(first||i<rows.length){
+      let c=cols.indexOf(Math.min(...cols)), room=BOT-cols[c];
+      // How many of the remaining rows fit in this column?
+      let n=i; while(n<rows.length&&hOf(i,n+1,first)<=room) n++;
+      const all=n===rows.length;
+      if(!all&&(n-i<3||(first&&cols.some(y=>BOT-y>=hOf(i,rows.length,true))))){
+        // Not enough room here: use another column if the rest fits there, else start a new page.
+        const fitC=cols.findIndex(y=>BOT-y>=hOf(i,rows.length,first));
+        if(fitC>=0){ c=fitC; n=rows.length; }
+        else { doc.addPage(); cols=Array(NC).fill(40); c=0; room=BOT-40; n=i; while(n<rows.length&&hOf(i,n+1,first)<=room) n++; if(n===i) n=i+1; }
+      }
+      const x=M+c*(CW+GAP), y=cols[c], h=hOf(i,n,first);
+      if(teal) doc.setFillColor(15,72,90); else doc.setFillColor(0,0,0);
+      doc.roundedRect(x,y,CW,hh,5,5,'F'); doc.rect(x,y+hh-6,CW,6,'F');
+      doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(10);
+      doc.text(doc.splitTextToSize(title+(first?'':' (continued)'),CW-2*PAD-20)[0],x+PAD,y+14.5);
+      if(rows.length&&first){ doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.text(String(rows.length),x+CW-PAD,y+14.5,{align:'right'}); }
+      doc.setDrawColor(196,211,213); doc.setLineWidth(0.8); doc.roundedRect(x,y,CW,h,5,5,'S');
+      let yy=y+hh+PAD+7;
+      if(first&&subL.length){ doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(90,104,110); doc.text(subL,x+PAD,yy); yy+=subH; }
+      if(!rows.length){ doc.setFont('helvetica','italic'); doc.setFontSize(9); doc.setTextColor(110,124,130); doc.text('Nothing packed yet.',x+PAD,yy+1); }
+      for(let j=i;j<n;j++){
+        const r=rows[j], L=wrapped[j]; box(x+PAD,yy+1,r.done);
+        doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+        if(r.done) doc.setTextColor(110,124,130); else doc.setTextColor(17,17,17);
+        doc.text(L,x+PAD+14,yy);
+        if(r.done){ doc.setDrawColor(110,124,130); doc.setLineWidth(0.6); L.forEach((ln,k)=>{ const ly=yy+k*LH-3; doc.line(x+PAD+14,ly,x+PAD+14+doc.getTextWidth(ln),ly); }); }
+        yy+=rh[j];
+      }
+      cols[c]=y+h+GAP; i=n; first=false;
+    }
+  };
+  if(bp.morning.length) card('Race morning','',bp.morning.map(m=>({text:clean(m.text)||'To-do',done:m.done})),false);
   bags.forEach(b=>{
     const bag=bagOf(b.key), w=dbWin(R,b.i), r=R.rows[b.i];
     const title=b.kind==='start'?'Start':b.kind==='finish'?'Finish bag':b.name;
-    const sub=b.kind==='start'?clk(0):b.kind==='finish'?'':dShow(r.dist).toFixed(1)+' '+uLabel()+'  |  '+clk(w.early)+' to '+clk(w.late);
-    section(title,sub,bag.items.map(it=>({text:clean(it.name)+(it.qty?'  ('+clean(it.qty)+')':''),done:it.done})),b.kind==='drop');
+    const sub=b.kind==='start'?'Start, '+clk(0):b.kind==='finish'?'Finish':dShow(r.dist).toFixed(1)+' '+uLabel()+', '+clk(w.early)+' to '+clk(w.late);
+    card(title,sub,bag.items.map(it=>({text:clean(it.name)+(it.qty?' ('+clean(it.qty)+')':''),done:it.done})),b.kind==='drop');
   });
   return doc;
 }
