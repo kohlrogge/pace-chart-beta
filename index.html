@@ -1166,7 +1166,7 @@ function dbBagView(R,bags,k){
     const byAt={}; hits.forEach(x=>(byAt[x.at]=byAt[x.at]||[]).push(x.name.toLowerCase()));
     const recap=hits.length?'You packed '+Object.entries(byAt).map(([at,ns])=>'your '+ns.join(' and your ')+' at '+at).join(', and ')+'.':'';
     if(!need.length) alerts.push({check:true,ico,todo:checkT,why:cond+' '+recap+' Do you still have '+(hits.length>1?'them':'it')+' with you? If not, pack '+(hits.length>1?'replacements':'another')+' here.'});
-    else alerts.push({items:need,ico,todo,done,why:why+(recap?' '+recap+' You still need '+need.map(id=>DB_BYID[id].name.toLowerCase()).join(', ')+' for this stretch.':'')});
+    else alerts.push({items:need,ico,todo,done,cond,why:why+(recap?' '+recap+' You still need '+need.map(id=>DB_BYID[id].name.toLowerCase()).join(', ')+' for this stretch.':'')});
   };
   if(x&&x.lo<40){
     gear(['beanie','gloves','extralayer'],'beanie','Pack warm gear.','Warm gear packed.','Warm gear check.',
@@ -1193,7 +1193,7 @@ function dbBagView(R,bags,k){
     if(a.check){ h+='<div class="alert info" role="status"><span class="aico">'+icon(a.ico)+'</span><div><b>'+esc(a.todo)+'</b> '+esc(a.why)+'</div></div>'; return; }
     const missing=a.items.filter(id=>!have.has(id)), packed=!missing.length&&!a.short;
     const names=missing.map(id=>(DB_BYID[id]||{name:id}).name.toLowerCase());
-    h+='<div class="alert'+(packed?' ok':'')+'" role="status"><span class="aico">'+icon(a.ico)+'</span><div><b>'+esc(packed||a.short?a.done:a.todo)+'</b> '+esc(a.why)+
+    h+='<div class="alert'+(packed?' ok':'')+'" role="status"><span class="aico">'+icon(a.ico)+'</span><div><b>'+esc(packed||a.short?a.done:a.todo)+'</b> '+esc(packed&&a.cond?a.cond:a.why)+
        (!packed&&missing.length&&missing.length<a.items.length?' Still missing: '+esc(names.join(', '))+'.':'')+(a.btn?' '+a.btn:'')+'</div></div>';
   });
   if(!ctx.needLamp&&ctx.hasLamp&&x.darkMin>0){
