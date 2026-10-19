@@ -185,9 +185,9 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .cond small{color:var(--muted);font-size:.82rem}
 .cond.leg{order:9;grid-column:1/-1;display:grid;grid-template-columns:minmax(150px,auto) minmax(0,1fr);gap:4px 24px;align-items:start}
 .cond.leg>.eyebrow,.cond.leg>.v,.cond.leg>small.ai{grid-column:1}
-.cond.leg>.legs{grid-column:2;grid-row:1/span 4}
-.cond.leg>small.pk{grid-column:2}
-@media (max-width:560px){.cond.leg{grid-template-columns:1fr}.cond.leg>.legs,.cond.leg>small.pk{grid-column:1;grid-row:auto}}
+.cond.leg>.legbox{grid-column:2;grid-row:1/span 4;display:flex;flex-direction:column;gap:6px}
+.legbox .lh{font-family:var(--label);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
+@media (max-width:560px){.cond.leg{grid-template-columns:1fr}.cond.leg>.legbox{grid-column:1;grid-row:auto;margin-top:6px}}
 .legs{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px}
 .legs li{display:flex;flex-direction:column;gap:1px;padding:6px 12px;border-radius:8px;border:1px solid var(--grey);font-size:.78rem;color:var(--muted);min-width:96px}
 .legs li b{font-family:var(--display);font-size:1rem;color:var(--ink);white-space:nowrap}
@@ -1106,8 +1106,8 @@ function dbBagView(R,bags,k){
     h+='<div class="cond leg"><span class="eyebrow">To '+esc(ctx.nextBag)+'</span>'+
        '<span class="v num">'+dShow(ctx.miNext).toFixed(1)+' '+uLabel()+'</span>'+
        '<small class="ai">Next aid station: '+esc(ctx.aidName)+', '+dShow(ctx.miAid).toFixed(1)+' '+uLabel()+'</small>'+
-       '<ul class="legs">'+ctx.legs.map(l=>'<li'+(l===ctx.slow?' class="slow"':'')+'><span>'+esc(l.label)+'</span><b class="num">'+fmtHrs(l.mins)+'</b></li>').join('')+'</ul>'+
-       '<small class="pk">Suggestions use the slowest time: <b>'+esc(ctx.slow.label)+'</b></small></div>';
+       '<div class="legbox"><span class="lh">Time to get there</span><ul class="legs">'+ctx.legs.map(l=>'<li'+(l===ctx.slow?' class="slow"':'')+'><span>'+esc(l.label)+'</span><b class="num">'+fmtHrs(l.mins)+'</b></li>').join('')+'</ul>'+
+       '<small class="pk">Suggestions use the slowest time: <b>'+esc(ctx.slow.label)+'</b></small></div></div>';
     h+=cond('Temperature',fmtT(x.lo)+' to '+fmtT(x.hi),'Low and high before '+esc(ctx.nextName));
     h+=cond('Rain','Up to '+x.rain+'%','Highest chance before '+esc(ctx.nextName));
     h+=cond('Sun',x.events.length?esc(x.events.map(evText).join(', ')):(x.darkMin>0?'Dark':'Daylight'),x.events.length?'Before '+esc(ctx.nextName):'The whole way to '+esc(ctx.nextName),!x.events.length&&x.darkMin>0?'dark':'');
