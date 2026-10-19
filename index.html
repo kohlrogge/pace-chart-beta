@@ -234,6 +234,13 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .lchip:hover{border-color:var(--teal)}
 .lchip[aria-pressed="true"]{background:var(--mint);border-color:var(--mint);color:var(--black);cursor:default;opacity:1}
 .rm.sm{font-size:1rem;padding:2px 6px}
+.icopick{flex:none;display:flex;flex-direction:column;align-items:center;gap:0;width:58px;padding:4px;border:2px dashed var(--teal);border-radius:10px;background:var(--white)}
+.icopick .ico{width:30px;height:30px}
+.icopick small{font-size:.62rem;font-weight:700;color:var(--teal)}
+.icogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:6px;max-width:640px;padding:10px;border:1px solid var(--grey);border-radius:12px;background:var(--row)}
+.icoopt{aspect-ratio:1;padding:6px;border:2px solid transparent;border-radius:10px;background:var(--white)}
+.icoopt:hover{border-color:var(--teal)}
+.icoopt[aria-pressed="true"]{border-color:var(--purple);box-shadow:0 0 0 2px var(--purple)}
 .addrow{display:flex;gap:8px;flex-wrap:wrap;max-width:640px}
 .addrow .in{flex:1 1 160px;width:auto}
 .linkbtn{border:0;background:none;padding:0;color:var(--teal);font-weight:600;text-decoration:underline;align-self:flex-start}
@@ -1103,7 +1110,10 @@ const ICON_OF={musher:'jar',sanitizer:'pump',socks:'sock',wipes:'wipes',bra:'bra
   salt:'salt',extrasalt:'extrasalt',scaps:'scaps',tums:'tums',gingins:'candy',tylenol:'tylenol',sunscreen:'sunscreen',chafe:'chafe',lipbalm:'lipbalm',
   cup:'cup',flask:'flask',bladder:'bladder',vest:'vest',bottle:'bottle',toothbrush:'toothbrush',mouthwash:'mouthwash',trash:'trash',icebandana:'bandana',
   dryshoes:'shoe',drysocks:'sock',change:'change',hoodie:'hoodie'};
-function icon(id){return '<svg class="ico" viewBox="0 0 48 48" aria-hidden="true">'+(ICONS[ICON_OF[id]]||ICONS.tag)+'</svg>'}
+function icoKey(id){if(ICON_OF[id]) return ICON_OF[id]; const c=(bp.custom||[]).find(q=>q.id===id); return c&&c.ico&&ICONS[c.ico]?c.ico:'tag';}
+function icon(id){return icoSvg(icoKey(id))}
+function icoSvg(k){return '<svg class="ico" viewBox="0 0 48 48" aria-hidden="true">'+(ICONS[k]||ICONS.tag)+'</svg>'}
+let dbDraft={name:'',cat:'other',ico:'tag',open:false};
 
 let dbNew=new Set();
 function calNum(q){const n=parseInt(String(q||'').replace(/[^0-9]/g,''),10);return isNaN(n)?0:n}
@@ -1244,9 +1254,13 @@ function dbBagView(R,bags,k){
         (mine?'<button type="button" class="tx" data-act="b-unmine" data-id="'+esc(x.id)+'" aria-label="Delete '+esc(x.name)+' from my items">×</button>':'')+'</div>';
     }).join('')+'</div></div>';
   });
-  h+='<div class="libcat"><label class="eyebrow" for="db-cname">Add your own item</label><div class="addrow"><input class="in" id="db-cname" placeholder="e.g. Favorite snack" autocomplete="off">'+
-     '<select class="in" id="db-ccat" aria-label="Category" style="flex:0 1 11rem">'+DB_CATS.map(([c,l])=>'<option value="'+c+'">'+esc(l)+'</option>').join('')+'</select>'+
-     '<button type="button" class="btn" data-act="b-custom">Add</button></div><span class="muted" style="font-size:.82rem">It goes in this bag and into My items for other bags.</span></div>';
+  h+='<div class="libcat"><label class="eyebrow" for="db-cname">Add your own item</label><div class="addrow">'+
+     '<button type="button" class="icopick" data-act="b-icotoggle" aria-expanded="'+dbDraft.open+'" aria-label="Choose a picture for your item">'+icoSvg(dbDraft.ico)+'<small>'+(dbDraft.open?'Close':'Picture')+'</small></button>'+
+     '<input class="in" id="db-cname" placeholder="e.g. Favorite snack" autocomplete="off" value="'+esc(dbDraft.name)+'">'+
+     '<select class="in" id="db-ccat" aria-label="Category" style="flex:0 1 11rem">'+DB_CATS.map(([c,l])=>'<option value="'+c+'"'+(dbDraft.cat===c?' selected':'')+'>'+esc(l)+'</option>').join('')+'</select>'+
+     '<button type="button" class="btn" data-act="b-custom">Add</button></div>';
+  if(dbDraft.open) h+='<div class="icogrid" role="group" aria-label="Pick a picture">'+Object.keys(ICONS).map(k=>'<button type="button" class="icoopt" data-act="b-ico" data-ico="'+k+'" aria-pressed="'+(dbDraft.ico===k)+'">'+icoSvg(k)+'</button>').join('')+'</div>';
+  h+='<span class="muted" style="font-size:.82rem">Pick a picture, name it, and add it. It goes in this bag and into My items for other bags.</span></div>';
   h+='</div></div></div>';
 
   // amounts
@@ -1326,15 +1340,18 @@ function dbAct(a,btn){
     if(a==='b-lib'){const id=btn.dataset.id, x=DB_BYID[id]||bp.custom.find(c=>c.id===id); if(x&&!have.has(id)){bag.items.push({id,name:x.name,qty:''});dbNew.add(id)}
       if(id==='headlamp'&&!have.has('batteries')&&!bag.items.some(it=>it.id==='batteries')){bag.items.push({id:'batteries',name:DB_BYID.batteries.name,qty:''});dbNew.add('batteries')}}
     if(a==='b-custom'){
-      const n=document.getElementById('db-cname'), c=document.getElementById('db-ccat'), name=(n&&n.value||'').trim();
+      const n=document.getElementById('db-cname'), c=document.getElementById('db-ccat'), name=(n&&n.value||dbDraft.name||'').trim();
       if(!name){dbErr='Type a name for your item first.';render();const el=document.getElementById('db-cname');if(el)el.focus();return}
       let x=bp.custom.find(cu=>cu.name.toLowerCase()===name.toLowerCase());
-      if(!x){x={id:'c_'+Date.now().toString(36),name,cat:c?c.value:'other'};bp.custom.push(x)}
+      if(!x){x={id:'c_'+Date.now().toString(36),name,cat:c?c.value:'other',ico:dbDraft.ico};bp.custom.push(x)} else if(dbDraft.ico!=='tag') x.ico=dbDraft.ico;
+      dbDraft={name:'',cat:x.cat,ico:'tag',open:false};
       if(!have.has(x.id)){bag.items.push({id:x.id,name:x.name,qty:''});dbNew.add(x.id)}
       dbErr='';
     }
   }
   if(a==='b-calfocus'){const el=document.querySelector('[data-cal]'); if(el){el.closest('.calbox').scrollIntoView({block:'center',behavior:'smooth'}); el.focus({preventScroll:true}); el.select(); const bx=el.closest('.calbox'); bx.classList.remove('flash'); void bx.offsetWidth; bx.classList.add('flash');} return;}
+  if(a==='b-icotoggle'){dbDraft.open=!dbDraft.open; render(); return;}
+  if(a==='b-ico'){dbDraft.ico=btn.dataset.ico; dbDraft.open=false; render(); const el=document.getElementById('db-cname'); if(el) el.focus(); return;}
   if(a==='b-unmine'){bp.custom=bp.custom.filter(c=>c.id!==btn.dataset.id);}
   if(a==='b-mrm'){bp.morning.splice(+btn.dataset.j,1);}
   if(a==='b-madd'){const n=document.getElementById('db-madd'), t=(n&&n.value||'').trim(); if(t) bp.morning.push({text:t}); bpSave(); render(); const el=document.getElementById('db-madd'); if(el) el.focus(); return;}
@@ -1389,12 +1406,14 @@ app.addEventListener('change',e=>{
   if(view==='bags'){
     const t=e.target;
     if(t.dataset.pick!=null){const k=t.dataset.pick;bp.picks=bp.picks.filter(x=>x!==k);if(t.checked)bp.picks.push(k);dbErr='';bpSave();render()}
+    if(t.id==='db-ccat') dbDraft.cat=t.value;
     if(t.id==='db-date'&&t.value){chart.startDate=t.value;save();render()}
   }
 });
 app.addEventListener('input',e=>{
   if(view!=='bags') return;
   const t=e.target;
+  if(t.id==='db-cname') dbDraft.name=t.value;
   if(t.dataset.bf){const st=bp.step||'';if(!st.startsWith('b:'))return;const it=bagOf(st.slice(2)).items[+t.dataset.j];if(it){it[t.dataset.bf]=t.value;bpSave()}}
   if(t.dataset.cal!=null){const st=bp.step||'';if(!st.startsWith('b:'))return;const it=bagOf(st.slice(2)).items[+t.dataset.cal];if(it){it.qty=calQty(calNum(t.value));bpSave()}}
   if(t.dataset.mi!=null){const m=bp.morning[+t.dataset.mi];if(m){m.text=t.value;bpSave()}}
