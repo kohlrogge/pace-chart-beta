@@ -863,7 +863,7 @@ const DB_LIB=[
   ['salt','Pink salt','lytes'],['extrasalt','Extra salt','lytes'],['scaps','Salt capsules','lytes'],['tums','Tums','lytes'],['gingins','Ginger candy','lytes'],['stomach','Stomach meds','lytes'],
   ['tylenol','Tylenol','meds'],['sunscreen','Sunscreen','meds'],['chafe','Chafing balm','meds'],['lipbalm','Lip balm','meds'],['bugspray','Insect repellent','meds'],['firstaid','First aid kit','meds'],
   ['cup','Reusable cup','hydro'],['flask','Flask','hydro'],['bladder','Hydration bladder','hydro'],['vest','Vest','hydro'],['bottle','Water bottle','hydro'],
-  ['toothbrush','Toothbrush','hygiene'],['tp','Toilet paper','hygiene'],['mouthwash','Mouthwash','hygiene'],
+  ['toothbrush','Toothbrush','hygiene'],['tp','Toilet paper','hygiene'],['femcare','Feminine hygiene products','hygiene'],['mouthwash','Mouthwash','hygiene'],
   ['trash','Small trash bag','other'],['icebandana','Ice bandana','other'],['poles','Trekking poles','other'],['blanket','Emergency blanket','other'],
   ['dryshoes','Shoes','finish'],['drysocks','Socks','finish'],['change','Change of clothes','finish'],['hoodie','Hoodie','finish'],['slides','Slides or sandals','finish']
 ].map(([id,name,cat])=>({id,name,cat}));
@@ -1068,11 +1068,12 @@ const ICONS={
   blanket:'<path class="g" d="M8 10h32v28H8z"/><path d="M8 19h32M8 29h32M19 10v28M30 10v28" style="stroke:#7d8f94"/><path class="y" d="M8 10h11v9H8z"/>',
   slides:'<path class="t" d="M6 30c0-6 4-10 10-10h4c4 0 6 2 6 6v2c0 4-3 7-7 7H11c-3 0-5-2-5-5z"/><path class="p" d="M10 22c2 6 12 6 14 0"/><path class="t" d="M24 36c0-6 4-10 10-10h2c4 0 6 3 6 6s-2 6-6 6h-8c-2 0-4-1-4-2z" transform="translate(0 -4)"/><path class="p" d="M27 24c1 5 11 5 13 0"/>',
   firstaid:'<rect class="w" x="6" y="13" width="36" height="27" rx="4"/><path d="M18 13V9a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4"/><path class="r" d="M21 18h6v5h5v6h-5v5h-6v-5h-5v-6h5z"/>',
+  femcare:'<path class="k" d="M5 15l3-3 3 3 3-3 3 3 3-3 3 3 3-3 3 3 3-3 3 3 3-3 3 3v18l-3 3-3-3-3 3-3-3-3 3-3-3-3 3-3-3-3 3-3-3-3 3-3-3z"/><path class="p" d="M24 31c-6-4-8-7-8-9.5a4 4 0 0 1 8-1.5 4 4 0 0 1 8 1.5c0 2.5-2 5.5-8 9.5z"/>',
   tag:'<path class="y" d="M7 15h22l12 9-12 9H7z"/><circle class="w" cx="31" cy="24" r="2.5"/><path d="M12 22h10M12 27h7"/>'
 };
 const ICON_OF={musher:'jar',sanitizer:'pump',socks:'sock',wipes:'wipes',bra:'bra',shirt:'shirt',tshirt:'tee',longsleeve:'longsleeve',shorts:'shorts',tights:'tights',
   lightlayer:'lightlayer',extralayer:'extralayer',jacket:'jacket',rainjacket:'rainjacket',gloves:'gloves',hat:'hat',buff:'buff',shoes:'shoe',
-  headlamp:'headlamp',backuplight:'flashlight',batteries:'battery',zipbag:'zipbag',cal:'flame',firstaid:'firstaid',blister:'blister',beanie:'beanie',armsleeves:'sleeves',windshell:'windshell',sunglasses:'sunglasses',powerbank:'powerbank',stomach:'stomach',bugspray:'bugspray',tp:'tp',poles:'poles',blanket:'blanket',slides:'slides',via:'packet',coffee:'packet',caffpills:'capsules',cable:'plug',coke:'vial',
+  headlamp:'headlamp',backuplight:'flashlight',batteries:'battery',zipbag:'zipbag',cal:'flame',femcare:'femcare',firstaid:'firstaid',blister:'blister',beanie:'beanie',armsleeves:'sleeves',windshell:'windshell',sunglasses:'sunglasses',powerbank:'powerbank',stomach:'stomach',bugspray:'bugspray',tp:'tp',poles:'poles',blanket:'blanket',slides:'slides',via:'packet',coffee:'packet',caffpills:'capsules',cable:'plug',coke:'vial',
   salt:'salt',extrasalt:'extrasalt',scaps:'scaps',tums:'tums',gingins:'candy',tylenol:'tylenol',sunscreen:'sunscreen',chafe:'chafe',lipbalm:'lipbalm',
   cup:'cup',flask:'flask',bladder:'bladder',vest:'vest',bottle:'bottle',toothbrush:'toothbrush',mouthwash:'mouthwash',trash:'trash',icebandana:'bandana',
   dryshoes:'shoe',drysocks:'sock',change:'change',hoodie:'hoodie'};
