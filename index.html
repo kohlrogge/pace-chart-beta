@@ -245,6 +245,13 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .addrow .in{flex:1 1 160px;width:auto}
 .linkbtn{border:0;background:none;padding:0;color:var(--teal);font-weight:600;text-decoration:underline;align-self:flex-start}
 .sumgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.sumgrid ul.ticks{list-style:none;padding-left:0;gap:6px}
+.ticks label{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
+.ticks input{appearance:none;-webkit-appearance:none;flex:none;width:18px;height:18px;margin:1px 0 0;border:2px solid var(--black);border-radius:3px;background:var(--white);display:grid;place-items:center}
+.ticks input:checked{background:var(--teal);border-color:var(--teal)}
+.ticks input:checked::after{content:"";width:5px;height:10px;border:solid var(--white);border-width:0 2.5px 2.5px 0;transform:translateY(-1px) rotate(45deg)}
+.ticks input:checked+span{text-decoration:line-through;color:var(--muted)}
+@media print{.top,.greyband,.banner,.dbunits,.dbsteps,.wizfoot{display:none!important}.dbpanel{border:0;padding:0}.sumgrid{grid-template-columns:repeat(2,1fr)}.box{break-inside:avoid}.boxh{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 .sumgrid ul{margin:0;padding-left:18px;display:flex;flex-direction:column;gap:3px}
 .dbcta{justify-content:space-between}
 /* visual bag + item pictures */
@@ -885,7 +892,7 @@ const DB_LIB=[
   ['dryshoes','Shoes','finish'],['drysocks','Socks','finish'],['change','Change of clothes','finish'],['hoodie','Hoodie','finish'],['slides','Slides or sandals','finish']
 ].map(([id,name,cat])=>({id,name,cat}));
 const DB_BYID=Object.fromEntries(DB_LIB.map(x=>[x.id,x]));
-const DB_MORNING=['Apply sunscreen',"Apply Musher's Secret to feet",'Apply chafing balm','Turn in drop bags at check-in'];
+const DB_MORNING=['Apply sunscreen',"Apply Musher's Secret to feet",'💩','Apply chafing balm','Turn in drop bags at check-in'];
 function bpFresh(){return {picks:[],bags:{},custom:[],morning:DB_MORNING.map(t=>({text:t})),step:'pick'}}
 function bpLoad(){try{const s=localStorage.getItem(BKEY);return s?JSON.parse(s):null}catch(e){return null}}
 function bpSave(){try{localStorage.setItem(BKEY,JSON.stringify(bp))}catch(e){}}
@@ -1301,13 +1308,13 @@ function dbMorning(){
 }
 
 function dbSummary(R,bags){
-  let h='<section class="dbpanel"><div><h2>Your packing checklist</h2><p class="preview" style="margin-top:6px;max-width:70ch">Everything you planned, bag by bag. A printable version and bag labels come in a later step.</p></div><div class="sumgrid">';
-  if(bp.morning.length) h+='<div class="box"><div class="boxh"><span>Race morning</span></div><div class="boxb"><ul>'+bp.morning.map(m=>'<li>'+esc(m.text)+'</li>').join('')+'</ul></div></div>';
+  let h='<section class="dbpanel"><div><h2>Your packing checklist</h2><p class="preview" style="margin-top:6px;max-width:70ch">Everything you planned, bag by bag. Check items off as you pack, or print this page and check them off on paper.</p></div><div class="sumgrid">';
+  if(bp.morning.length) h+='<div class="box"><div class="boxh"><span>Race morning</span></div><div class="boxb"><ul class="ticks">'+bp.morning.map(m=>'<li><label><input type="checkbox"><span>'+esc(m.text)+'</span></label></li>').join('')+'</ul></div></div>';
   bags.forEach(b=>{
     const bag=bagOf(b.key), w=dbWin(R,b.i), r=R.rows[b.i];
     const sub=b.kind==='start'?'Start, '+clk(0):b.kind==='finish'?'Finish':dShow(r.dist).toFixed(1)+' '+uLabel()+', '+clk(w.early)+' to '+clk(w.late);
     h+='<div class="box"><div class="boxh'+(b.kind==='drop'?' teal':'')+'"><span>'+esc(b.kind==='start'?'Start':b.kind==='finish'?'Finish bag':b.name)+'</span><span class="num" style="font-weight:500;font-size:.85rem">'+bag.items.length+'</span></div><div class="boxb"><small class="muted">'+esc(sub)+'</small>'+
-      (bag.items.length?'<ul>'+bag.items.map(it=>'<li>'+esc(it.name)+(it.qty?' <span class="muted">('+esc(it.qty)+')</span>':'')+'</li>').join('')+'</ul>':'<p class="preview">Nothing packed yet.</p>')+'</div></div>';
+      (bag.items.length?'<ul class="ticks">'+bag.items.map(it=>'<li><label><input type="checkbox"><span>'+esc(it.name)+(it.qty?' <span class="muted">('+esc(it.qty)+')</span>':'')+'</span></label></li>').join('')+'</ul>':'<p class="preview">Nothing packed yet.</p>')+'</div></div>';
   });
   return h+'</div></section>';
 }
