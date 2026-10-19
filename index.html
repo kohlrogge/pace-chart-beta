@@ -394,7 +394,7 @@ function buildPdf(jsPDF){
   doc.setFillColor(15,72,90); doc.rect(0,0,W,84,'F');
   try{ doc.addImage(LOGO_SRC,'PNG',M,12,60,60); }catch(e){}
   doc.setTextColor(255,255,255);
-  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.text("THE WOMEN'S 100 MILER PROJECT PACE CHART",M+74,30);
+  doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.text("PACE CHART",M+74,30);
   doc.setFontSize(20); doc.text(chart.name||'Pace chart',M+74,52);
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
   const sub=dShow(R.D).toFixed(1)+' '+uLabel()+'  |  '+(R.rows.length-2)+' aid stations  |  start '+fmtClock12(chart.startTime)+
@@ -646,7 +646,7 @@ function planCell(p,i,R){
 function renderChart(){
   const R=compute(chart);
   let h='';
-  h+='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><span class="eyebrow">Women\'s 100 Miler Project pace chart</span><h1>'+esc(chart.name||'Untitled race')+'</h1>'+
+  h+='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><h1>'+esc(chart.name||'Untitled race')+'</h1>'+
      '<span class="muted num">'+dShow(R.D).toFixed(1)+' '+uLabel()+' · '+(R.rows.length-2)+' aid stations · start '+fmtClock12(chart.startTime)+(chart.startDate?' '+esc(new Date(chart.startDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})):'')+'</span></div></div>'+
      '<div class="actions"><button class="btn" data-act="pdf" type="button"'+(pdfBusy?' disabled':'')+'>'+(pdfBusy?'Building PDF...':'Save PDF')+'</button><button class="btn" data-act="copy" type="button">Copy table</button><button class="btn" data-act="b-open" type="button">Drop bags</button><button class="btn" data-act="edit" type="button">Edit chart</button><button class="btn primary" data-act="new" type="button">New chart</button></div></div></header><div class="greyband bleed"></div>';
   if(pdfMsg) h+='<div class="banner"><p>'+esc(pdfMsg)+'</p></div>';
@@ -805,7 +805,7 @@ function radio(name,val,cur,title,help){
 
 function renderWizard(){
   const w=wiz, steps=['Aid stations','Race details','Target times'];
-  let h='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><span class="eyebrow">Women\'s 100 Miler Project pace chart</span><h1>'+(w.editing?'Edit chart':'New pace chart')+'</h1></div></div>'+
+  let h='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><h1>'+(w.editing?'Edit chart':'New pace chart')+'</h1></div></div>'+
         '<div class="actions">'+(chart?'<button class="btn ghost" data-act="cancel" type="button">Cancel</button>':'')+'</div></div></header><div class="greyband bleed"></div>';
   h+='<div class="wiz" id="wizform"><ol class="steps">'+steps.map((s,i)=>'<li class="'+(w.step===i+1?'on':w.step>i+1?'done':'')+'"><b>'+(i+1)+'</b>'+s+'</li>').join('')+'</ol>';
   if(w.step===1){
@@ -1010,7 +1010,7 @@ function dbCurStep(bags){
 
 function renderBags(){
   const R=compute(chart), bags=dbBags(R), steps=dbStepList(bags), st=dbCurStep(bags), cur=steps.findIndex(s=>s[0]===st);
-  let h='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><span class="eyebrow">Women\'s 100 Miler Project drop bags</span><h1>'+esc(chart.name||'Untitled race')+'</h1>'+
+  let h='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><h1>'+esc(chart.name||'Untitled race')+'</h1>'+
     '<span class="muted">Drop bag planner</span></div></div><div class="actions"><button class="btn" data-act="b-exit" type="button">Back to pace chart</button></div></div></header><div class="greyband bleed"></div>';
   h+='<div class="banner"><p><b>Sample weather for testing.</b> Temperatures, rain chances, and sunrise (7:00 AM) and sunset (7:00 PM) are placeholders. Live forecasts for your race location come next.</p></div>';
   h+='<div class="controls dbunits"><div class="ctl"><span class="eyebrow">Distance</span>'+segBtns('unit',[['mi','Miles'],['km','Kilometers']],chart.unit)+'</div>'+
@@ -1328,7 +1328,7 @@ function buildBagPdf(jsPDF){
   const doc=new jsPDF({unit:'pt',format:'letter'}), W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight(), M=40;
   doc.setFillColor(15,72,90); doc.rect(0,0,W,84,'F');
   try{ doc.addImage(LOGO_SRC,'PNG',M,12,60,60); }catch(e){}
-  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.text("THE WOMEN'S 100 MILER PROJECT DROP BAG CHECKLIST",M+74,30);
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.text("DROP BAG CHECKLIST",M+74,30);
   doc.setFontSize(20); doc.text(chart.name||'Drop bags',M+74,52);
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
   doc.text((chart.startDate?new Date(chart.startDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})+'  |  ':'')+'Start '+fmtClock12(chart.startTime),M+74,68);
