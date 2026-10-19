@@ -164,6 +164,8 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .preview{font-size:.9rem;color:var(--muted);margin:0}
 @media (prefers-reduced-motion:no-preference){.btn,.seg button,.choice{transition:background-color .15s,border-color .15s}}
 /* drop bag planner */
+.dbunits{justify-content:flex-start;gap:10px 24px}
+.dbunits .ctl{flex-direction:row;gap:10px}
 .dbsteps{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;scrollbar-width:thin}
 .dbsteps button{flex:none;border:2px solid var(--grey);background:var(--white);border-radius:999px;padding:5px 12px;font-family:var(--label);font-weight:600;font-size:.8rem;color:var(--muted);white-space:nowrap}
 .dbsteps button.on{background:var(--purple);border-color:var(--purple);color:var(--white)}
@@ -921,7 +923,8 @@ function dbWx(from,to){
   }
   return {lo,hi,rain,darkMin,events};
 }
-function fmtT(f){return chart.unit==='km'?Math.round((f-32)*5/9)+'°C':Math.round(f)+'°F'}
+const tUnit=()=>chart.tempUnit||(chart.unit==='km'?'C':'F');
+function fmtT(f){return tUnit()==='C'?Math.round((f-32)*5/9)+'°C':Math.round(f)+'°F'}
 function clk(el){const c=clockParts(el);return dayLabel(c.day)+' '+c.text}
 function evText(ev){const c=clockParts(ev.el);return (ev.type==='sunset'?'Sunset ':'Sunrise ')+dayLabel(c.day)+' '+fmtClock12(ev.type==='sunset'?SAMPLE_SUNSET:SAMPLE_SUNRISE)}
 function fmtHrs(min){min=Math.round(min);const h=Math.floor(min/60),m=min%60;return h?(h+' hr'+(m?' '+m+' min':'')):m+' min'}
@@ -994,6 +997,8 @@ function renderBags(){
   let h='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><span class="eyebrow">Women\'s 100 Miler Project drop bags</span><h1>'+esc(chart.name||'Untitled race')+'</h1>'+
     '<span class="muted">Drop bag planner</span></div></div><div class="actions"><button class="btn" data-act="b-exit" type="button">Back to pace chart</button></div></div></header><div class="greyband bleed"></div>';
   h+='<div class="banner"><p><b>Sample weather for testing.</b> Temperatures, rain chances, and sunrise (7:00 AM) and sunset (7:00 PM) are placeholders. Live forecasts for your race location come next.</p></div>';
+  h+='<div class="controls dbunits"><div class="ctl"><span class="eyebrow">Distance</span>'+segBtns('unit',[['mi','Miles'],['km','Kilometers']],chart.unit)+'</div>'+
+     '<div class="ctl"><span class="eyebrow">Temperature</span>'+segBtns('tempUnit',[['F','°F'],['C','°C']],tUnit())+'</div></div>';
   h+='<nav class="dbsteps" aria-label="Planner steps">'+steps.map(([k,l],j)=>'<button type="button" data-act="b-go" data-step="'+esc(k)+'" class="'+(j===cur?'on':j<cur?'done':'')+'"'+(j===cur?' aria-current="step"':'')+'>'+esc(l)+'</button>').join('')+'</nav>';
   if(dbErr) h+='<p class="err" role="alert">'+esc(dbErr)+'</p>';
   if(st==='pick') h+=dbPick(R);
