@@ -28,6 +28,7 @@ body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:15p
 .bleed{width:100vw;margin-left:calc(50% - 50vw)}
 .bleed-inner{max-width:1080px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
 h1,h2,h3{font-family:var(--display);font-weight:700;margin:0;text-wrap:balance;line-height:1.1}
+h1 .kind{color:var(--mint);white-space:nowrap}
 h1{font-size:2.2rem;color:var(--white);text-shadow:0 0 12px rgba(255,255,255,.35)}
 h2{font-size:1.5rem;color:var(--ink)}
 .eyebrow{font-family:var(--label);font-size:.72rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:600}
@@ -646,7 +647,7 @@ function planCell(p,i,R){
 function renderChart(){
   const R=compute(chart);
   let h='';
-  h+='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><h1>'+esc(chart.name||'Untitled race')+'</h1>'+
+  h+='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><h1>'+esc(chart.name||'Untitled race')+' <span class="kind">Pace Chart</span></h1>'+
      '<span class="muted num">'+dShow(R.D).toFixed(1)+' '+uLabel()+' · '+(R.rows.length-2)+' aid stations · start '+fmtClock12(chart.startTime)+(chart.startDate?' '+esc(new Date(chart.startDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})):'')+'</span></div></div>'+
      '<div class="actions"><button class="btn" data-act="pdf" type="button"'+(pdfBusy?' disabled':'')+'>'+(pdfBusy?'Building PDF...':'Save PDF')+'</button><button class="btn" data-act="copy" type="button">Copy table</button><button class="btn" data-act="b-open" type="button">Drop bags</button><button class="btn" data-act="edit" type="button">Edit chart</button><button class="btn primary" data-act="new" type="button">New chart</button></div></div></header><div class="greyband bleed"></div>';
   if(pdfMsg) h+='<div class="banner"><p>'+esc(pdfMsg)+'</p></div>';
@@ -1010,8 +1011,8 @@ function dbCurStep(bags){
 
 function renderBags(){
   const R=compute(chart), bags=dbBags(R), steps=dbStepList(bags), st=dbCurStep(bags), cur=steps.findIndex(s=>s[0]===st);
-  let h='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><h1>'+esc(chart.name||'Untitled race')+'</h1>'+
-    '<span class="muted">Drop bag planner</span></div></div><div class="actions"><button class="btn" data-act="b-exit" type="button">Back to pace chart</button></div></div></header><div class="greyband bleed"></div>';
+  let h='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><h1>'+esc(chart.name||'Untitled race')+' <span class="kind">Drop Bags</span></h1>'+
+    '</div></div><div class="actions"><button class="btn" data-act="b-exit" type="button">Back to pace chart</button></div></div></header><div class="greyband bleed"></div>';
   h+='<div class="banner"><p><b>Sample weather for testing.</b> Temperatures, rain chances, and sunrise (7:00 AM) and sunset (7:00 PM) are placeholders. Live forecasts for your race location come next.</p></div>';
   h+='<div class="controls dbunits"><div class="ctl"><span class="eyebrow">Distance</span>'+segBtns('unit',[['mi','Miles'],['km','Kilometers']],chart.unit)+'</div>'+
      '<div class="ctl"><span class="eyebrow">Temperature</span>'+segBtns('tempUnit',[['F','°F'],['C','°C']],tUnit())+'</div></div>';
