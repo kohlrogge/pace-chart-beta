@@ -948,7 +948,7 @@ function dbSuggest(b,ctx){
   add('tums','','Every bag');
   add('cal',(Math.ceil(200*h/50)*50).toLocaleString('en-US')+' cal','200 per hour, '+span);
   add('tylenol','','Optional, every bag');
-  ['chafe','lipbalm','trash'].forEach(id=>add(id,'','Every bag'));
+  ['chafe','lipbalm'].forEach(id=>add(id,'','Every bag'));
   add('buff','','Every bag');
   const lo='Low of '+fmtT(x.lo)+' before '+ctx.nextName;
   if(x.lo<55) add('lightlayer','',lo);
