@@ -279,6 +279,14 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .coordrow small{grid-column:2/-1}
 .coordrow .errs{color:var(--cut);font-weight:600}
 @media (max-width:560px){.coordrow{grid-template-columns:minmax(0,1fr) auto}.coordrow b,.coordrow small{grid-column:1/-1}}
+.modalbg{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.45);display:grid;place-items:center;padding:max(16px,env(safe-area-inset-top,0px)) max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.modal{position:relative;background:var(--white);border-radius:16px;border-top:8px solid var(--purple);max-width:420px;width:100%;padding:24px;display:flex;flex-direction:column;gap:12px;align-items:center;text-align:center;box-shadow:0 20px 40px rgba(0,0,0,.3);max-height:100%;overflow:auto}
+.modal p{margin:0}
+.modal .linkbtn{align-self:center}
+.modal .mx{position:absolute;top:8px;right:8px}
+.qr{width:200px;height:200px;max-width:100%;border-radius:12px}
+.qr.ph{display:grid;place-items:center;border:3px dashed var(--grey);color:var(--muted);font-size:.85rem;padding:12px}
+.donlink{text-align:center;margin:0}
 .legal{max-width:760px}
 .legal p{margin:0;max-width:65ch;font-size:1rem}
 .empty{border:2px dashed var(--grey);border-radius:12px;padding:20px;text-align:center}
@@ -1111,7 +1119,7 @@ function renderRace(){
      '<p>'+(s.tot?s.done+' of '+s.tot+' items checked off':'Fills in as you pack your bags.')+'</p>'+
      (s.tot?'<div class="meter"><i style="width:'+Math.round(100*s.done/s.tot)+'%"></i></div>':'')+
      '<div class="row"><button type="button" class="btn" data-act="r-check"'+(s.bags?'':' disabled')+'>Open checklist</button></div></div></article>';
-  h+='</section>';
+  h+='</section><p class="donlink"><button type="button" class="linkbtn" data-act="r-donate">Support The Women\'s 100 Miler Project</button></p>';
   return h;
 }
 
@@ -1426,6 +1434,7 @@ function renderBags(){
      '<div class="ctl"><span class="eyebrow">Temperature</span>'+segBtns('tempUnit',[['F','°F'],['C','°C']],tUnit())+'</div></div>';
   h+='<nav class="dbsteps" aria-label="Planner steps">'+steps.map(([k,l],j)=>'<button type="button" data-act="b-go" data-step="'+esc(k)+'" class="'+(j===cur?'on':j<cur?'done':'')+'"'+(j===cur?' aria-current="step"':'')+'>'+esc(l)+'</button>').join('')+'</nav>';
   if(dbErr) h+='<p class="err" role="alert">'+esc(dbErr)+'</p>';
+  if(st==='summary') maybeDonate();
   if(st==='pick') h+=dbPick(R);
   else if(st==='morning') h+=dbMorning();
   else if(st==='summary') h+=dbSummary(R,bags);
@@ -1717,6 +1726,23 @@ function dbMorning(){
   return h;
 }
 
+/* ---------- donation popup ---------- */
+// Fill these in to turn on the Venmo button and QR code. venmo: the Venmo username without the @. qr: an image file in the repo, e.g. 'venmo-qr.png'.
+const DONATE={venmo:'', qr:''};
+let donateOpen=false;
+function donateBody(){
+  return '<p>Consider making a donation to The Women\'s 100 Miler Project and help us provide more opportunities for women.</p>'+
+    (DONATE.qr?'<img class="qr" src="'+esc(DONATE.qr)+'" alt="Venmo QR code for The Women\'s 100 Miler Project">':'<div class="qr ph">Venmo QR code goes here</div>')+
+    (DONATE.venmo?'<a class="btn primary" href="https://venmo.com/u/'+encodeURIComponent(DONATE.venmo)+'" target="_blank" rel="noopener">Donate on Venmo</a><p class="muted">Venmo: <b>@'+esc(DONATE.venmo)+'</b></p>':'');
+}
+function renderDonate(){
+  if(!donateOpen) return '';
+  return '<div class="modalbg"><div class="modal" role="dialog" aria-modal="true" aria-labelledby="donh">'+
+    '<button type="button" class="rm mx" data-act="r-donclose" aria-label="Close">×</button>'+
+    '<h2 id="donh">Enjoying this app?</h2>'+donateBody()+
+    '<button type="button" class="linkbtn" data-act="r-donclose">Maybe later</button></div></div>';
+}
+function maybeDonate(){ if(!store.donateSeen){ store.donateSeen=Date.now(); writeStore(); donateOpen=true; } }
 function dbSummary(R,bags){
   let h='<section class="dbpanel"><div class="sumhead"><div><h2>Your packing checklist</h2><p class="preview" style="margin-top:6px;max-width:70ch">Everything you planned, bag by bag. Tick each item as you pack it; your ticks are saved. Or save a PDF to print and check off on paper.</p></div>'+
     '<button type="button" class="btn primary" data-act="b-pdf"'+(dbPdfBusy?' disabled':'')+'>'+(dbPdfBusy?'Building PDF...':'Save PDF')+'</button></div>'+
@@ -1728,7 +1754,7 @@ function dbSummary(R,bags){
     h+='<div class="box"><div class="boxh'+(b.kind==='drop'?' teal':'')+'"><span>'+esc(b.kind==='start'?'Start':b.kind==='finish'?'Finish bag':b.name)+'</span><span class="num" style="font-weight:500;font-size:.85rem">'+bag.items.length+'</span></div><div class="boxb"><small class="muted">'+esc(sub)+'</small>'+
       (bag.items.length?'<ul class="ticks">'+bag.items.map((it,j)=>'<li><label><input type="checkbox" data-ck="'+esc(b.key)+'" data-j="'+j+'"'+(it.done?' checked':'')+'><span>'+esc(it.name)+(it.qty?' <span class="muted">('+esc(it.qty)+')</span>':'')+'</span></label></li>').join('')+'</ul>':'<p class="preview">Nothing packed yet.</p>')+'</div></div>';
   });
-  return h+'</div></section>';
+  return h+'</div><p class="donlink"><button type="button" class="linkbtn" data-act="r-donate">Support The Women\'s 100 Miler Project</button></p></section>';
 }
 
 let dbPdfBusy=false, dbPdfMsg='';
@@ -1852,11 +1878,12 @@ function dbAct(a,btn){
 /* ---------- render + events ---------- */
 const app=document.getElementById('app');
 function render(){
-  app.innerHTML = view==='disclaimer'?renderDisclaimer():view==='home'?renderHome():view==='start'?renderStart():view==='race'?renderRace():view==='chart'?renderChart():view==='bags'?renderBags():renderWizard();
+  app.innerHTML = (view==='disclaimer'?renderDisclaimer():view==='home'?renderHome():view==='start'?renderStart():view==='race'?renderRace():view==='chart'?renderChart():view==='bags'?renderBags():renderWizard())+renderDonate();
   if(copyText!=null){const t=document.getElementById('copyfall');if(t){t.focus();t.select()}}
 }
 
 app.addEventListener('click',e=>{
+  if(e.target.classList&&e.target.classList.contains('modalbg')){donateOpen=false;render();return}
   const b=e.target.closest('button'); if(!b) return;
   if(b.dataset.set){
     const k=b.dataset.set,v=b.dataset.val;
@@ -1866,6 +1893,8 @@ app.addEventListener('click',e=>{
   const a=b.dataset.act; if(!a) return;
   if(a.startsWith('r-')){
     const go=v=>{view=v;render();window.scrollTo(0,0)};
+    if(a==='r-donate'){donateOpen=true;render();return}
+    if(a==='r-donclose'){donateOpen=false;render();return}
     if(a==='r-ack'){store.ack=true;writeStore();go('home')}
     if(a==='r-legal') go('disclaimer');
     if(a==='r-home'){confirmDel=null;go('home')}
@@ -1939,6 +1968,7 @@ function goNext(){
   if(err){ render(); const el=document.querySelector('.err'); if(el&&el.scrollIntoView) el.scrollIntoView({block:'center'}); return; }
   if(wiz.step<3){ wiz.step++; render(); window.scrollTo(0,0); } else finishWizard();
 }
+document.addEventListener('keydown',e=>{ if(e.key==='Escape'&&donateOpen){donateOpen=false;render();} });
 app.addEventListener('keydown',e=>{
   if(e.key!=='Enter'||e.isComposing) return;
   const t=e.target;
