@@ -1684,7 +1684,7 @@ function dbBagView(R,bags,k){
   });
   if(!ctx.needLamp&&ctx.hasLamp&&x.darkMin>0){
     h+='<div class="alert info" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>Headlamp check.</b> '+'At '+esc(ctx.sel.label)+' pace you\'ll arrive after dark, so your headlamp should already be on.'+' There\'s up to '+esc(fmtHrs(x.darkMin))+' more of darkness before '+esc(ctx.nextBag)+'. '+
-       'Will your batteries last that long? If not, pack spares in this bag. Pack a spare headlamp only if yours might fail or be left behind.</div></div>';
+       'Will your batteries last that long? If not, pack spares in this bag. Consider packing a spare light if you don\'t already have one.</div></div>';
   }
 
   h+='<div class="fun">';
