@@ -856,25 +856,25 @@ const BKEY='dropbags.v1';
 const DB_CATS=[['foot','Foot care'],['clothing','Clothing'],['light','Lights and electronics'],['fuel','Fuel'],['lytes','Electrolytes and stomach'],['meds','Meds and skin'],['hydro','Hydration gear'],['hygiene','Hygiene'],['other','Other'],['finish','Finish line']];
 const DB_LIB=[
   ['musher',"Musher's Secret",'foot'],['sanitizer','Hand sanitizer','foot'],['socks','Socks','foot'],['wipes','Wet wipes or paper towel','foot'],['blister','Blister kit or Leukotape','foot'],
-  ['bra','Sports bra','clothing'],['shirt','Shirt','clothing'],['tshirt','T-shirt','clothing'],['longsleeve','Long sleeve','clothing'],['shorts','Shorts','clothing'],['tights','Tights','clothing'],
+  ['bra','Sports bra','clothing'],['shirt','Shirt','clothing'],['longsleeve','Long sleeve','clothing'],['shorts','Shorts','clothing'],['tights','Tights','clothing'],
   ['lightlayer','Light layer','clothing'],['extralayer','Extra layer','clothing'],['jacket','Jacket','clothing'],['rainjacket','Rain jacket','clothing'],['gloves','Gloves','clothing'],['hat','Hat','clothing'],['buff','Neck gaiter','clothing'],['beanie','Beanie','clothing'],['armsleeves','Arm sleeves','clothing'],['windshell','Wind shell','clothing'],['sunglasses','Sunglasses','clothing'],['shoes','Spare shoes','clothing'],
   ['headlamp','Headlamp','light'],['backuplight','Backup light','light'],['batteries','Headlamp batteries','light'],['cable','Charging cable','light'],['powerbank','Portable battery pack','light'],['zipbag','Zip bag for electronics','light'],
-  ['cal','Calories','fuel'],['coffee','Instant coffee packet','fuel'],['caffpills','Caffeine pills','fuel'],['coke','Salted Coke','fuel'],
-  ['salt','Pink salt','lytes'],['extrasalt','Extra salt','lytes'],['scaps','S-caps','lytes'],['tums','Tums','lytes'],['gingins','Gin Gins','lytes'],['stomach','Stomach meds','lytes'],
+  ['cal','Calories','fuel'],['coffee','Instant coffee packet','fuel'],['caffpills','Caffeine pills','fuel'],['coke','Cola','fuel'],
+  ['salt','Pink salt','lytes'],['extrasalt','Extra salt','lytes'],['scaps','Salt capsules','lytes'],['tums','Tums','lytes'],['gingins','Ginger candy','lytes'],['stomach','Stomach meds','lytes'],
   ['tylenol','Tylenol','meds'],['sunscreen','Sunscreen','meds'],['chafe','Chafing balm','meds'],['lipbalm','Lip balm','meds'],['bugspray','Insect repellent','meds'],['firstaid','First aid kit','meds'],
-  ['cup','Reusable cup','hydro'],['flask','Flask','hydro'],['bladder','Bladder','hydro'],['vest','Vest','hydro'],['bottle','Water bottle','hydro'],
+  ['cup','Reusable cup','hydro'],['flask','Flask','hydro'],['bladder','Hydration bladder','hydro'],['vest','Vest','hydro'],['bottle','Water bottle','hydro'],
   ['toothbrush','Toothbrush','hygiene'],['tp','Toilet paper','hygiene'],['mouthwash','Mouthwash','hygiene'],
   ['trash','Small trash bag','other'],['icebandana','Ice bandana','other'],['poles','Trekking poles','other'],['blanket','Emergency blanket','other'],
-  ['dryshoes','Shoes','finish'],['drysocks','Socks','finish'],['change','Change of clothes','finish'],['hoodie','Cozy hoodie','finish'],['slides','Slides or sandals','finish']
+  ['dryshoes','Shoes','finish'],['drysocks','Socks','finish'],['change','Change of clothes','finish'],['hoodie','Hoodie','finish'],['slides','Slides or sandals','finish']
 ].map(([id,name,cat])=>({id,name,cat}));
 const DB_BYID=Object.fromEntries(DB_LIB.map(x=>[x.id,x]));
-const DB_MORNING=['Apply sunscreen','Put Coke in vials and add to drop bags'];
+const DB_MORNING=['Apply sunscreen','Apply chafing balm','Turn in drop bags at check-in'];
 function bpFresh(){return {picks:[],bags:{},custom:[],morning:DB_MORNING.map(t=>({text:t})),step:'pick'}}
 function bpLoad(){try{const s=localStorage.getItem(BKEY);return s?JSON.parse(s):null}catch(e){return null}}
 function bpSave(){try{localStorage.setItem(BKEY,JSON.stringify(bp))}catch(e){}}
 let bp=Object.assign(bpFresh(),bpLoad()||{});
 (function(){const ren={via:['coffee','Instant coffee packet']},old={'Starbucks Via':1,'Spare batteries or charging cable':1,'Dry shoes':1,'Dry socks':1,'Buff':1};
-  Object.values(bp.bags||{}).forEach(bg=>(bg.items||[]).forEach(it=>{ if(it.id==='tums'&&/dose/.test(it.qty||'')) it.qty=''; if(ren[it.id]){[it.id,it.name]=ren[it.id]} else if(old[it.name]&&DB_BYID[it.id]) it.name=DB_BYID[it.id].name; }));})();
+  Object.values(bp.bags||{}).forEach(bg=>(bg.items||[]).forEach(it=>{ if(it.id==='tums'&&/dose/.test(it.qty||'')) it.qty=''; if(it.id==='tshirt'){it.id='shirt';it.name='Shirt'} if(it.qty==='1 jewelry bag') it.qty='1 small bag'; if({'Gin Gins':1,'Salted Coke':1,'S-caps':1,'Bladder':1,'Cozy hoodie':1}[it.name]&&DB_BYID[it.id]) it.name=DB_BYID[it.id].name; if(ren[it.id]){[it.id,it.name]=ren[it.id]} else if(old[it.name]&&DB_BYID[it.id]) it.name=DB_BYID[it.id].name; }));})();
 let dbErr='';
 const stKey=s=>s.name+'@'+(+s.dist).toFixed(2);
 function bagOf(key){return bp.bags[key]||(bp.bags[key]={items:[],dismissed:[]})}
@@ -938,7 +938,7 @@ function dbSuggest(b,ctx){
   if(b.kind==='finish'){ ['dryshoes','drysocks','change','hoodie'].forEach(id=>add(id,'','For after you finish')); return out; }
   const x=ctx.wx, h=ctx.hours, span=fmtHrs(ctx.mins)+' to '+ctx.nextName+' at '+ctx.slow.label+' pace';
   ['musher','sanitizer','socks','wipes'].forEach(id=>add(id,'','Foot care kit, every bag'));
-  add('salt','1 jewelry bag','Every bag');
+  add('salt','1 small bag','Every bag');
   add('tums','','Every bag');
   add('cal',(Math.ceil(200*h/50)*50).toLocaleString('en-US')+' cal','200 per hour, '+span);
   add('tylenol','','Optional, every bag');
@@ -1158,7 +1158,7 @@ function dbBagView(R,bags,k){
         (mine?'<button type="button" class="tx" data-act="b-unmine" data-id="'+esc(x.id)+'" aria-label="Delete '+esc(x.name)+' from my items">×</button>':'')+'</div>';
     }).join('')+'</div></div>';
   });
-  h+='<div class="libcat"><label class="eyebrow" for="db-cname">Add your own item</label><div class="addrow"><input class="in" id="db-cname" placeholder="e.g. Salted Coke vial" autocomplete="off">'+
+  h+='<div class="libcat"><label class="eyebrow" for="db-cname">Add your own item</label><div class="addrow"><input class="in" id="db-cname" placeholder="e.g. Favorite snack" autocomplete="off">'+
      '<select class="in" id="db-ccat" aria-label="Category" style="flex:0 1 11rem">'+DB_CATS.map(([c,l])=>'<option value="'+c+'">'+esc(l)+'</option>').join('')+'</select>'+
      '<button type="button" class="btn" data-act="b-custom">Add</button></div><span class="muted" style="font-size:.82rem">It goes in this bag and into My items for other bags.</span></div>';
   h+='</div></div></div>';
@@ -1195,7 +1195,7 @@ function dbMorning(){
     h+='<div class="itemrow two"><input class="in" id="db-m'+j+'" data-mi="'+j+'" autocomplete="off" value="'+esc(m.text)+'" aria-label="To-do '+(j+1)+'"><button type="button" class="rm" data-act="b-mrm" data-j="'+j+'" aria-label="Remove '+esc(m.text)+'">×</button></div>';
   });
   if(!bp.morning.length) h+='<p class="preview">Nothing on the list yet.</p>';
-  h+='</div><div class="addrow"><input class="in" id="db-madd" placeholder="e.g. Drop bags at check-in by 5:00 AM" autocomplete="off"><button type="button" class="btn" data-act="b-madd">Add to-do</button></div></section>';
+  h+='</div><div class="addrow"><input class="in" id="db-madd" placeholder="e.g. Charge watch" autocomplete="off"><button type="button" class="btn" data-act="b-madd">Add to-do</button></div></section>';
   return h;
 }
 
