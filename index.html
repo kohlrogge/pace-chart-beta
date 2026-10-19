@@ -1156,12 +1156,24 @@ function dbBagView(R,bags,k){
     alerts.push({items:['headlamp','batteries'],ico:'headlamp',todo:'Pack a headlamp.',done:'Headlamp packed.',
       why:(ss?'Sunset is at '+fmtClock12(SAMPLE_SUNSET)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark, so bring headlamp batteries as well.'});
   }
+  // Warm gear and layers: if an earlier bag (or the start) already has it, ask whether she still has it instead of repeating the warning.
+  const SAT={lightlayer:['lightlayer','extralayer','longsleeve','jacket','windshell','rainjacket'],extralayer:['extralayer','jacket'],beanie:['beanie'],gloves:['gloves']};
+  const where=j=>bags[j].kind==='start'?'the start':'your '+bags[j].name+' drop bag';
+  const earlier=id=>{const hits=[]; for(let j=0;j<k;j++){(bagOf(bags[j].key).items||[]).forEach(it=>{if(SAT[id].includes(it.id)) hits.push({name:it.name,at:where(j)})})} return hits;};
+  const gear=(ids,ico,todo,done,checkT,cond,ask)=>{ const why=cond+' '+ask;
+    const hits=[],need=[];
+    ids.forEach(id=>{const hh=earlier(id); if(hh.length) hh.forEach(x=>{if(!hits.some(y=>y.name===x.name&&y.at===x.at)) hits.push(x)}); else need.push(id);});
+    const byAt={}; hits.forEach(x=>(byAt[x.at]=byAt[x.at]||[]).push(x.name.toLowerCase()));
+    const recap=hits.length?'You packed '+Object.entries(byAt).map(([at,ns])=>'your '+ns.join(' and your ')+' at '+at).join(', and ')+'.':'';
+    if(!need.length) alerts.push({check:true,ico,todo:checkT,why:cond+' '+recap+' Do you still have '+(hits.length>1?'them':'it')+' with you? If not, pack '+(hits.length>1?'replacements':'another')+' here.'});
+    else alerts.push({items:need,ico,todo,done,why:why+(recap?' '+recap+' You still need '+need.map(id=>DB_BYID[id].name.toLowerCase()).join(', ')+' for this stretch.':'')});
+  };
   if(x&&x.lo<40){
-    alerts.push({items:['beanie','gloves','extralayer'],ico:'beanie',todo:'Pack warm gear.',done:'Warm gear packed.',
-      why:'It could drop to '+fmtT(x.lo)+' before '+ctx.nextBag+'. Bring a warm hat, gloves, and an extra layer.'});
+    gear(['beanie','gloves','extralayer'],'beanie','Pack warm gear.','Warm gear packed.','Warm gear check.',
+      'It could drop to '+fmtT(x.lo)+' before '+ctx.nextBag+'.','Bring a warm hat, gloves, and an extra layer.');
   } else if(x&&x.lo<50){
-    alerts.push({items:['lightlayer'],ico:'lightlayer',todo:'Pack a layer.',done:'Layer packed.',
-      why:'It could drop to '+fmtT(x.lo)+' before '+ctx.nextBag+'. Bring a layer you can put on as it cools off.'});
+    gear(['lightlayer'],'lightlayer','Pack a layer.','Layer packed.','Layer check.',
+      'It could drop to '+fmtT(x.lo)+' before '+ctx.nextBag+'.','Bring a layer you can put on as it cools off.');
   }
   if(x&&x.hi>75){
     alerts.push({items:['extrasalt','bottle'],ico:'bottle',todo:'Hot stretch ahead.',done:'Ready for the heat.',
@@ -1171,9 +1183,10 @@ function dbBagView(R,bags,k){
     alerts.push({items:['bottle'],ico:'bottle',todo:'Long gap between aid stations.',done:'Ready for the long gap.',
       why:'There\'s '+dShow(ctx.gap.mi).toFixed(1)+' '+uLabel()+' between '+ctx.gap.from+' and '+ctx.gap.to+' with no aid. Carry extra calories, and room for more fluids, like an extra bottle or flask.'});
   }
-  const MUST=new Set(); alerts.forEach(a=>a.items.forEach(id=>MUST.add(id)));
+  const MUST=new Set(); alerts.forEach(a=>(a.items||[]).forEach(id=>MUST.add(id)));
   const open=sugg.filter(s=>!have.has(s.id)&&!dis.has(s.id)).sort((a,b)=>MUST.has(b.id)-MUST.has(a.id)), nDis=sugg.filter(s=>dis.has(s.id)&&!have.has(s.id)).length;
   alerts.forEach(a=>{
+    if(a.check){ h+='<div class="alert info" role="status"><span class="aico">'+icon(a.ico)+'</span><div><b>'+esc(a.todo)+'</b> '+esc(a.why)+'</div></div>'; return; }
     const missing=a.items.filter(id=>!have.has(id)), packed=!missing.length&&!a.short;
     const names=missing.map(id=>(DB_BYID[id]||{name:id}).name.toLowerCase());
     h+='<div class="alert'+(packed?' ok':'')+'" role="status"><span class="aico">'+icon(a.ico)+'</span><div><b>'+esc(packed||a.short?a.done:a.todo)+'</b> '+esc(a.why)+
