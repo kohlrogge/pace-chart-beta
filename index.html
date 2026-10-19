@@ -150,6 +150,19 @@ td.adj .t{color:var(--adj)}
 .sttable td,.sttable th{padding:6px;text-align:left;border-bottom:1px solid #dde6e8;background:transparent!important}
 .sttable thead th{background:transparent;color:var(--muted);font-weight:600}
 .sttable td.idx{color:var(--muted);width:24px;text-align:right}
+.grip{border:0;background:transparent;color:var(--muted);font-size:1.15rem;line-height:1;padding:4px 6px;border-radius:6px;cursor:grab;touch-action:none}
+.grip:hover{color:var(--teal);background:var(--row)}
+.rowsort tr.rowdragging{position:relative;z-index:3;background:var(--white);box-shadow:0 8px 18px rgba(0,0,0,.18)}
+.rowsort tr.rowdragging td{background:var(--white)!important}
+.rowsort tr.dropabove td{box-shadow:inset 0 3px 0 var(--purple)}
+.rowsort tr.dropbelow td{box-shadow:inset 0 -3px 0 var(--purple)}
+.rowtools{white-space:nowrap}
+.mv{border:0;background:transparent;color:var(--muted);font-size:.95rem;padding:4px 5px;border-radius:6px}
+.mv:hover:not([disabled]){color:var(--teal);background:var(--row)}
+.mv[disabled]{opacity:.3}
+.impmap{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.impgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px 12px}
+.impgrid label{display:flex;flex-direction:column;gap:4px;font-size:.85rem;font-weight:600}
 .sttable td:first-child,.sttable th:first-child{min-width:0;width:24px}
 .sttable td,.sttable th{padding:6px 8px}
 .sttable .note{display:block;padding-left:12px;color:var(--muted);font-size:.85rem;white-space:nowrap}
@@ -864,6 +877,10 @@ function finishWizard(){
     const id='r_'+Date.now().toString(36);
     store.races.push({id,created:Date.now(),updated:Date.now(),mode:wiz.mode||'basic',chart:null,bags:null}); store.cur=id; bp=bpFresh();
   }
+  bp.locs=bp.locs||{}; bp.locText=bp.locText||{};
+  wiz.rows.forEach((r,i)=>{ const st=b.stations[i]; if(!st) return; const k=stKey(st); if(okLoc(bp.locs[k])) return;
+    if(r.lat!=null&&r.lon!=null) bp.locs[k]={name:r.lat.toFixed(3)+', '+r.lon.toFixed(3),lat:r.lat,lon:r.lon}; else if(r.place) bp.locText[k]=r.place; });
+  if(!okLoc(bp.loc)){ const f=wiz.rows.find(r=>r.lat!=null&&r.lon!=null); if(f) bp.loc={name:f.lat.toFixed(3)+', '+f.lon.toFixed(3),lat:f.lat,lon:f.lon}; }
   save(); bpSave(); view=chart.manual?'bags':'chart'; if(chart.manual&&wiz.isNew) bp.step='pick'; wiz=null; render(); window.scrollTo(0,0);
 }
 
@@ -883,17 +900,19 @@ function renderWizard(){
        '<div class="field" style="max-width:none"><span class="flabel">Distances are in</span><span class="help">You can switch the chart between miles and kilometers later.</span><div class="choices">'+radio('w-unit','mi',w.entryUnit,'Miles','')+radio('w-unit','km',w.entryUnit,'Kilometers','')+'</div></div>'+
        (bags?'':'<div class="field" style="max-width:none"><span class="flabel">The race posts cutoffs as</span><span class="help">Clock times are converted using the start time in step 2.</span><div class="choices">'+radio('w-cf','elapsed',w.cutoffFormat,'Race time','e.g. 14:25')+radio('w-cf','clock',w.cutoffFormat,'Time of day','e.g. 8:25 PM')+'</div></div>')+
        '</div>';
-    h+='<div class="stbox"><table class="sttable"><thead><tr><th></th><th>Name</th><th>Distance ('+u+')</th>'+(bags?'':'<th>Hard cutoff</th>')+'<th></th></tr></thead><tbody>';
+    h+='<p class="preview" style="margin:0">Missed one? Add it, then drag it into place with the ⠿ handle.</p>';
+    h+='<div class="stbox"><table class="sttable rowsort"><thead><tr><th></th><th>Name</th><th>Distance ('+u+')</th>'+(bags?'':'<th>Hard cutoff</th>')+'<th></th></tr></thead><tbody>';
     w.rows.forEach((r,i)=>{
       const first=i===0,last=i===w.rows.length-1;
-      h+='<tr><td class="idx num">'+(first?'S':last?'F':i)+'</td>'+
+      h+='<tr><td class="idx num">'+(first||last?(first?'S':'F'):'<button type="button" class="grip" data-grip="'+i+'" aria-label="Drag to move '+esc(r.name||'this aid station')+'" title="Drag to move">⠿</button>')+'</td>'+
          '<td><input class="in" id="w-n'+i+'" value="'+esc(r.name)+'" placeholder="'+(first?'Start':last?'Finish':'Aid station name')+'"></td>'+
          '<td><input class="in num" id="w-d'+i+'" inputmode="decimal" value="'+(first?'0':esc(r.distText))+'"'+(first?' readonly':'')+' placeholder="0.0"></td>'+
          (bags?'':'<td>'+(first||last?'<span class="note">'+(first?'None':'Set in step 3')+'</span>':'<input class="in num" id="w-c'+i+'" value="'+esc(r.cutText)+'" placeholder="Optional">')+'</td>')+
-         '<td>'+(first||last?'':'<button type="button" class="rm" data-act="rmrow" data-i="'+i+'" aria-label="Remove '+esc(r.name||'row')+'">×</button>')+'</td></tr>';
+         '<td class="rowtools">'+(first||last?'':'<button type="button" class="mv" data-act="rowup" data-i="'+i+'" aria-label="Move '+esc(r.name||'row')+' up"'+(i===1?' disabled':'')+'>↑</button><button type="button" class="mv" data-act="rowdown" data-i="'+i+'" aria-label="Move '+esc(r.name||'row')+' down"'+(i===w.rows.length-2?' disabled':'')+'>↓</button><button type="button" class="rm" data-act="rmrow" data-i="'+i+'" aria-label="Remove '+esc(r.name||'row')+'">×</button>')+'</td></tr>';
     });
     h+='</tbody></table></div><div><button type="button" class="btn" data-act="addrow">Add aid station</button></div>';
     h+='<details class="paste"><summary>Paste rows from a spreadsheet</summary><p class="preview">One station per line: name, distance, cutoff (optional), separated by tabs or commas. The first line is the start and the last line is the finish. This replaces the rows above.</p><textarea id="w-paste" class="in" placeholder="Group Camp	0&#10;Pickett	6.8&#10;Charit	19.2	6:00"></textarea><div style="margin-top:8px"><button type="button" class="btn" data-act="paste">Use these rows</button></div></details>';
+    h+=renderImport();
   }
   if(w.step===2){
     h+='<div class="field"><label for="w-name">Race name</label><input class="in" id="w-name" value="'+esc(w.name)+'" placeholder="e.g. Big Fork 100" autocomplete="off"></div>';
@@ -1257,7 +1276,7 @@ function parseCoord(t,max){const v=parseFloat(String(t).trim());return isFinite(
 function parseLatLon(t){const m=String(t||'').trim().match(/^(-?\d+(?:\.\d+)?)[\s,;]+(-?\d+(?:\.\d+)?)$/); if(!m) return null; const la=+m[1], lo=+m[2]; return Math.abs(la)<=90&&Math.abs(lo)<=180?{lat:la,lon:lo}:null;}
 async function setStationLoc(k,text){
   text=String(text||'').trim(); bp.locs=bp.locs||{};
-  if(!text){ delete bp.locs[k]; stGeo[k]=null; bpSave(); render(); loadWx(); return; }
+  if(!text){ delete bp.locs[k]; if(bp.locText) delete bp.locText[k]; stGeo[k]=null; bpSave(); render(); loadWx(); return; }
   const ll=parseLatLon(text);
   if(ll){ bp.locs[k]={name:ll.lat.toFixed(3)+', '+ll.lon.toFixed(3),lat:ll.lat,lon:ll.lon}; stGeo[k]=null; bpSave(); render(); loadWx(); return; }
   stGeo[k]={busy:true}; render();
@@ -1278,7 +1297,18 @@ function pasteStationLocs(text){
   out.forEach((ll,n)=>{ const s=st[n+off]; if(s) bp.locs[stKey(s)]={name:ll.lat.toFixed(3)+', '+ll.lon.toFixed(3),lat:ll.lat,lon:ll.lon}; });
   bpSave(); loadWx(); return '';
 }
-let pasteErr='';
+let pasteErr='', pendBusy=false;
+// Town names that came in with an imported aid station chart get looked up once the planner opens.
+async function resolvePending(){
+  if(pendBusy||!bp.locText) return; const ks=Object.keys(bp.locText).filter(k=>!okLoc((bp.locs||{})[k])); if(!ks.length) return;
+  pendBusy=true; bp.locs=bp.locs||{};
+  for(const k of ks){ try{ const hits=await geocode(bp.locText[k]);
+      if(hits.length){ bp.locs[k]=hits[0]; if(hits.length>1) stGeo[k]={alts:hits.slice(1)}; delete bp.locText[k]; }
+      else stGeo[k]={err:'No place found for "'+bp.locText[k]+'". Try a nearby town, or paste GPS coordinates.'};
+    }catch(e){ break; } }
+  if(!okLoc(bp.loc)){ const f=chart.stations.map(st=>bp.locs[stKey(st)]).find(okLoc); if(f) bp.loc=Object.assign({},f); }
+  pendBusy=false; bpSave(); render(); loadWx();
+}
 
 function wxBanner(){
   if(!okLoc(bp.loc)) return '<div class="banner"><p><b>Add the race location</b> on the Drop bags step to get the forecast and real sunrise and sunset times. Until then, conditions are a sample day.</p></div>';
@@ -1308,7 +1338,7 @@ function dbLocBox(){
     chart.stations.forEach((s,i)=>{ const k=stKey(s), L=(bp.locs||{})[k], g=stGeo[k];
       const label=i===0?'Start':i===chart.stations.length-1?'Finish':s.name;
       h+='<div class="coordrow"><b>'+esc(label)+(i===0||i===chart.stations.length-1?'':' <span class="muted num">'+dShow(s.dist).toFixed(1)+' '+uLabel()+'</span>')+'</b>'+
-         '<input class="in" data-stloc="'+esc(k)+'" value="'+esc(okLoc(L)?L.name:'')+'" placeholder="Town or GPS" autocomplete="off">'+
+         '<input class="in" data-stloc="'+esc(k)+'" value="'+esc(okLoc(L)?L.name:((bp.locText||{})[k]||''))+'" placeholder="Town or GPS" autocomplete="off">'+
          '<button type="button" class="btn sm" data-act="b-stloc" data-k="'+esc(k)+'"'+(g&&g.busy?' disabled':'')+'>'+(g&&g.busy?'...':'Set')+'</button>'+
          (okLoc(L)&&!parseLatLon(L.name)?'<small class="muted num">'+L.lat.toFixed(3)+', '+L.lon.toFixed(3)+'</small>':'')+
          (g&&g.err?'<small class="errs">'+esc(g.err)+'</small>':'')+
@@ -1768,7 +1798,7 @@ function dbGo(step){
 function dbAct(a,btn){
   const R=compute(chart), bags=dbBags(R), steps=dbStepList(bags), st=dbCurStep(bags), cur=steps.findIndex(s=>s[0]===st);
   const key=st.startsWith('b:')?st.slice(2):null, bag=key?bagOf(key):null;
-  if(a==='b-open'){view='bags';dbErr='';copyText=null;render();window.scrollTo(0,0);loadWx();return}
+  if(a==='b-open'){view='bags';dbErr='';copyText=null;render();window.scrollTo(0,0);loadWx();resolvePending();return}
   if(a==='b-exit'){view='race';dbErr='';render();window.scrollTo(0,0);return}
   if(a==='b-go'){dbGo(btn.dataset.step);return}
   if(a==='b-next'&&steps[cur+1]){dbGo(steps[cur+1][0]);return}
@@ -1864,6 +1894,10 @@ app.addEventListener('click',e=>{
       wiz.plans.push({label:name,timeText:''}); wizErr=''; render();
       const el=document.getElementById('w-pt'+(wiz.plans.length-1)); if(el) el.focus(); } }
   if(a==='rmplan'){readWizInputs(); if(wiz.plans.length>1){ wiz.plans.splice(+b.dataset.i,1); wizErr=''; render(); } }
+  if(a==='rowup'){moveRow(+b.dataset.i,+b.dataset.i-1);return}
+  if(a==='rowdown'){moveRow(+b.dataset.i,+b.dataset.i+1);return}
+  if(a==='impapply'){applyImport();return}
+  if(a==='impcancel'){imp=null;render();return}
   if(a==='rmrow'){readWizInputs();wiz.rows.splice(+b.dataset.i,1);render()}
   if(a==='paste'){readWizInputs();const t=document.getElementById('w-paste').value;const rows=parsePaste(t);
     if(!rows){wizErr='Couldn\'t read those rows. Each line needs a name and a distance.';render();return}
@@ -1879,6 +1913,8 @@ app.addEventListener('click',e=>{
 });
 app.addEventListener('change',e=>{
   if(view==='wiz' && wiz && wiz.step===1 && (e.target.name==='w-unit'||e.target.name==='w-cf')){readWizInputs();render()}
+  if(view==='wiz' && e.target.id==='w-file'){ startImport(e.target.files&&e.target.files[0]); }
+  if(view==='wiz' && imp && e.target.dataset.impf){ imp.map[e.target.dataset.impf]=+e.target.value; imp.err=''; render(); }
   if(view==='bags'){
     const t=e.target;
     if(t.dataset.pick!=null){const k=t.dataset.pick;bp.picks=bp.picks.filter(x=>x!==k);if(t.checked)bp.picks.push(k);dbErr='';bpSave();render()}
@@ -1962,6 +1998,143 @@ document.addEventListener('touchmove',e=>{ if(drag&&drag.on) e.preventDefault();
 document.addEventListener('contextmenu',e=>{ if(drag||(e.target.closest&&e.target.closest('[data-drag]'))) e.preventDefault(); });
 document.addEventListener('dragstart',e=>{ if(e.target.closest&&e.target.closest('[data-drag]')) e.preventDefault(); });
 
+/* ---------- import an aid station chart (Excel, CSV, or PDF), read in the browser; nothing is uploaded ---------- */
+const XLSX_URL='https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+const PDFJS_URL='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+const PDFJS_WORKER='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+let imp=null;   // {busy, err, file, rows:[[...]], head:int, map:{name,dist,cut,lat,lon,place}}
+const IMP_FIELDS=[['name','Aid station name'],['dist','Distance'],['cut','Cutoff'],['lat','Latitude'],['lon','Longitude'],['place','Town or location']];
+async function readSheet(file){
+  if(!window.XLSX) await loadScript(XLSX_URL);
+  const wb=XLSX.read(await file.arrayBuffer(),{type:'array'});
+  // Use the sheet with the most filled rows.
+  let best=[];
+  wb.SheetNames.forEach(n=>{ const a=XLSX.utils.sheet_to_json(wb.Sheets[n],{header:1,raw:false,defval:''}).map(r=>r.map(c=>String(c).trim())).filter(r=>r.some(Boolean)); if(a.length>best.length) best=a; });
+  return best;
+}
+async function readPdf(file){
+  if(!window.pdfjsLib){ await loadScript(PDFJS_URL); window.pdfjsLib.GlobalWorkerOptions.workerSrc=PDFJS_WORKER; }
+  const pdf=await window.pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise, rows=[];
+  for(let p=1;p<=Math.min(pdf.numPages,10);p++){
+    const tc=await (await pdf.getPage(p)).getTextContent();
+    // Group text pieces into lines by height on the page, then split each line into cells where there's a wide gap.
+    const items=tc.items.filter(it=>it.str&&it.str.trim()).map(it=>({x:it.transform[4],y:it.transform[5],w:it.width||0,s:it.str.trim(),h:Math.abs(it.transform[3])||8}));
+    items.sort((a,b)=>b.y-a.y||a.x-b.x);
+    const lines=[];
+    items.forEach(it=>{ const L=lines.find(l=>Math.abs(l.y-it.y)<=it.h*0.5); if(L) L.items.push(it); else lines.push({y:it.y,items:[it]}); });
+    lines.forEach(l=>{ l.items.sort((a,b)=>a.x-b.x); const cells=[]; let cur=null;
+      l.items.forEach(it=>{ if(cur&&it.x-(cur.x+cur.w)<it.h*0.45){ cur.s+=(it.x-(cur.x+cur.w)>it.h*0.15?' ':'')+it.s; cur.w=it.x+it.w-cur.x; } else { cur={x:it.x,w:it.w,s:it.s}; cells.push(cur); } });
+      rows.push(cells); });
+  }
+  // Line cells up under the header's columns by position, so a blank cell doesn't shift the rest of the row left.
+  const hi=rows.findIndex(r=>r.some(c=>/mile|\bmi\b|\bkm\b|dist/i.test(c.s))&&r.length>=2);
+  if(hi<0) return rows.map(r=>r.map(c=>c.s));
+  const cols=rows[hi].map(c=>({l:c.x,r:c.x+c.w}));
+  return rows.map((r,ri)=>{ if(ri<hi) return r.map(c=>c.s); const out=cols.map(()=>'');
+    // A cell belongs to the column whose header starts at or just before it (tables are usually left-aligned);
+    // if it ends before any header starts, use the nearest one.
+    r.forEach(c=>{ let best=-1; cols.forEach((k,j)=>{ if(k.l<=c.x+c.w*0.5) best=j; });
+      if(best<0){ let bd=Infinity; cols.forEach((k,j)=>{ const d=Math.abs(k.l-c.x); if(d<bd){bd=d;best=j;} }); }
+      out[best]=out[best]?out[best]+' '+c.s:c.s; });
+    return out; });
+}
+const isNum=v=>/^-?\d+(?:\.\d+)?$/.test(String(v).replace(/,/g,'').trim());
+const isTimeish=v=>/^\d{1,3}:\d{2}(\s*[ap]\.?m\.?)?$/i.test(String(v).trim())||/^\d{1,2}\s*[ap]\.?m\.?$/i.test(String(v).trim());
+function guessImport(rows){
+  const kw={name:/aid|station|name|checkpoint|\bcp\b/i,dist:/mile|\bmi\b|\bkm\b|dist/i,cut:/cut.?off|close|closes|cut/i,lat:/\blat/i,lon:/\blon|\blng|long/i,place:/town|city|place|location|address|access/i};
+  // Header row: the first row in the top ten whose cells mostly aren't numbers and that names a distance column.
+  let head=-1;
+  for(let i=0;i<Math.min(rows.length,10);i++){ const r=rows[i]; if(r.some(c=>kw.dist.test(c))&&r.filter(c=>c&&!isNum(c)).length>=2){head=i;break;} }
+  const map={name:-1,dist:-1,cut:-1,lat:-1,lon:-1,place:-1};
+  if(head>=0){ const r=rows[head];
+    ['lat','lon','dist','cut','name','place'].forEach(f=>{ const j=r.findIndex((c,j)=>kw[f].test(c)&&!Object.values(map).includes(j)); if(j>=0) map[f]=j; }); }
+  const body=rows.slice(head+1), ncol=Math.max(...rows.map(r=>r.length));
+  const col=j=>body.map(r=>r[j]||'').filter(Boolean), share=(j,f)=>{const v=col(j);return v.length?v.filter(f).length/v.length:0};
+  const used=()=>Object.values(map);
+  for(let j=0;j<ncol;j++){ if(used().includes(j)) continue;
+    const nums=col(j).filter(isNum).map(v=>+v.replace(/,/g,''));
+    if(map.lat<0&&share(j,isNum)>0.8&&nums.every(v=>Math.abs(v)<=90&&String(v).includes('.'))&&nums.some(v=>Math.abs(v)>1)){map.lat=j;continue}
+    if(map.lat>=0&&map.lon<0&&j===map.lat+1&&share(j,isNum)>0.8&&nums.every(v=>Math.abs(v)<=180)){map.lon=j;continue}
+    if(map.dist<0&&share(j,isNum)>0.8){map.dist=j;continue}
+    if(map.cut<0&&share(j,isTimeish)>0.5){map.cut=j;continue}
+    if(map.name<0&&share(j,v=>!isNum(v)&&!isTimeish(v))>0.6){map.name=j;continue}
+  }
+  return {head,map};
+}
+function importRows(){
+  const {rows,head,map}=imp, g=(r,f)=>map[f]>=0?String(r[map[f]]||'').trim():'';
+  const out=[];
+  rows.slice(head+1).forEach(r=>{ const d=g(r,'dist').replace(/,/g,''); if(!isNum(d)) return;   // skip notes, totals, repeated headers
+    const la=parseCoord(g(r,'lat'),90), lo=parseCoord(g(r,'lon'),180);
+    out.push({name:g(r,'name'),distText:String(+d),cutText:g(r,'cut'),lat:isNaN(la)?null:la,lon:isNaN(lo)?null:lo,place:g(r,'place')}); });
+  return out;
+}
+async function startImport(file){
+  if(!file) return;
+  readWizInputs(); imp={busy:true,file:file.name}; render();
+  try{
+    const ext=(file.name.split('.').pop()||'').toLowerCase();
+    let rows;
+    if(ext==='pdf'||file.type==='application/pdf') rows=await readPdf(file);
+    else if(['xlsx','xls','csv','ods','tsv','txt'].includes(ext)) rows=await readSheet(file);
+    else throw new Error('type');
+    if(!rows.length) throw new Error('empty');
+    const g=guessImport(rows); imp={file:file.name,rows,head:g.head,map:g.map};
+    if(!importRows().length) imp.err='We couldn\'t find aid station rows with distances in that file. Check the column choices below.';
+  }catch(e){
+    imp={file:file.name,err:e.message==='type'?'That file type isn\'t supported. Use an Excel, CSV, or PDF file.':e.message==='empty'?'We couldn\'t find any text in that file. If it\'s a scan or a photo, type the rows in or paste them instead.':'We couldn\'t read that file. Check your connection (the reader loads the first time you use it), or paste the rows instead.'};
+  }
+  render();
+}
+function applyImport(){
+  const rows=importRows(); if(!rows.length){ imp.err='No rows with distances to fill in. Check the column choices.'; render(); return; }
+  if(parseFloat(rows[0].distText)!==0) rows.unshift({name:'Start',distText:'0',cutText:''});
+  rows[0].cutText='';
+  const last=rows[rows.length-1]; if(last.cutText){ wiz.totalText=last.cutText; last.cutText=''; }
+  if(rows.some(r=>/[ap]\.?m/i.test(r.cutText))) wiz.cutoffFormat='clock';
+  wiz.rows=rows; imp=null; wizErr=''; render();
+}
+function renderImport(){
+  let h='<details class="paste"'+(imp?' open':'')+'><summary>Upload an aid station chart (Excel, CSV, or PDF)</summary>'+
+    '<p class="preview">The file is read right here in your browser. You\'ll see what we found and can fix anything before it fills the table. PDFs work best when you can select the text in them; scans and photos can\'t be read.</p>'+
+    '<input type="file" id="w-file" accept=".xlsx,.xls,.csv,.ods,.tsv,.txt,.pdf,application/pdf" class="in" style="max-width:420px">';
+  if(imp&&imp.busy) h+='<p class="preview"><b>Reading '+esc(imp.file)+'...</b></p>';
+  if(imp&&imp.err) h+='<p class="err" role="alert">'+esc(imp.err)+'</p>';
+  if(imp&&imp.rows){
+    const ncol=Math.max(...imp.rows.map(r=>r.length)), headRow=imp.head>=0?imp.rows[imp.head]:null;
+    const colName=j=>'Column '+(j+1)+(headRow&&headRow[j]?': '+headRow[j]:'');
+    h+='<div class="impmap"><b>Which column is which?</b><div class="impgrid">'+IMP_FIELDS.map(([f,l])=>'<label><span>'+l+'</span><select class="in" data-impf="'+f+'"><option value="-1">Not in this file</option>'+
+      Array.from({length:ncol},(_,j)=>'<option value="'+j+'"'+(imp.map[f]===j?' selected':'')+'>'+esc(colName(j))+'</option>').join('')+'</select></label>').join('')+'</div>';
+    const prev=importRows();
+    h+='<p class="preview">'+prev.length+' aid station'+(prev.length===1?'':'s')+' found'+(prev.some(r=>r.lat!=null)?', with GPS coordinates':'')+(prev.some(r=>r.place)?', with locations':'')+'. First few:</p>';
+    if(prev.length) h+='<div class="stbox"><table class="sttable"><thead><tr><th></th><th>Name</th><th>Distance</th><th>Cutoff</th><th>Location</th></tr></thead><tbody>'+
+      prev.slice(0,6).map((r,i)=>'<tr><td class="idx num">'+(i+1)+'</td><td>'+esc(r.name)+'</td><td class="num">'+esc(r.distText)+'</td><td class="num">'+esc(r.cutText)+'</td><td class="num">'+(r.lat!=null?r.lat+', '+r.lon:esc(r.place))+'</td></tr>').join('')+'</tbody></table></div>';
+    h+='<div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn primary" data-act="impapply"'+(prev.length?'':' disabled')+'>Fill the table with these</button><button type="button" class="btn" data-act="impcancel">Cancel</button></div>'+
+      '<p class="preview">This replaces the rows above. You can fix anything in the table afterward.</p></div>';
+  }
+  return h+'</details>';
+}
+
+/* ---------- reorder aid stations by dragging the handle (or the arrow buttons) ---------- */
+let rowDrag=null;
+function moveRow(from,to){ readWizInputs(); const last=wiz.rows.length-1; to=Math.max(1,Math.min(last-1,to)); if(from===to||from<1||from>=last) return; const [r]=wiz.rows.splice(from,1); wiz.rows.splice(to,0,r); render(); const el=document.querySelector('[data-grip="'+to+'"]'); if(el) el.focus(); }
+app.addEventListener('pointerdown',e=>{
+  const g=e.target.closest&&e.target.closest('[data-grip]'); if(!g||view!=='wiz') return;
+  e.preventDefault();
+  const trs=[...document.querySelectorAll('.sttable.rowsort tbody tr')];
+  rowDrag={from:+g.dataset.grip,y0:e.clientY,pid:e.pointerId,tr:trs[+g.dataset.grip],trs,mids:trs.map(t=>{const r=t.getBoundingClientRect();return r.top+r.height/2}),to:+g.dataset.grip};
+  rowDrag.tr.classList.add('rowdragging');
+});
+window.addEventListener('pointermove',e=>{
+  if(!rowDrag||e.pointerId!==rowDrag.pid) return;
+  const dy=e.clientY-rowDrag.y0, last=rowDrag.trs.length-1; rowDrag.tr.style.transform='translateY('+dy+'px)';
+  const y=rowDrag.mids[rowDrag.from]+dy; let to=rowDrag.from;
+  for(let i=1;i<last;i++){ if(i<rowDrag.from&&y<rowDrag.mids[i]){to=i;break} if(i>rowDrag.from&&y>rowDrag.mids[i]) to=i; }
+  rowDrag.to=to; rowDrag.trs.forEach((t,i)=>{t.classList.toggle('dropabove',i===to&&to<rowDrag.from);t.classList.toggle('dropbelow',i===to&&to>rowDrag.from)});
+});
+const endRowDrag=e=>{ if(!rowDrag||e.pointerId!==rowDrag.pid) return; const d=rowDrag; rowDrag=null; d.tr.style.transform=''; d.trs.forEach(t=>t.classList.remove('dropabove','dropbelow','rowdragging')); if(d.to!==d.from) moveRow(d.from,d.to); };
+window.addEventListener('pointerup',endRowDrag); window.addEventListener('pointercancel',endRowDrag);
+
 // Testing shortcut: opening the link with #demo fills setup with the example race. Not shown to users.
 function isDemo(){try{return location.hash==='#demo'}catch(e){return false}}
 view=store.ack?'home':'disclaimer';
@@ -1971,7 +2144,7 @@ try{window.addEventListener('hashchange',()=>{if(isDemo()){demo();render()}})}ca
 render();
 
 // expose for testing
-window.__pace={get store(){return store},compute,parseDur,parseClock,EXAMPLE,dbBags,dbCtx,dbSuggest,get bp(){return bp}};
+window.__pace={get store(){return store},get imp(){return imp},compute,parseDur,parseClock,EXAMPLE,dbBags,dbCtx,dbSuggest,get bp(){return bp}};
 })();
 </script>
 </body>
