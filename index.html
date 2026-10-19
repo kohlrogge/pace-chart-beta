@@ -245,6 +245,7 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .addrow .in{flex:1 1 160px;width:auto}
 .linkbtn{border:0;background:none;padding:0;color:var(--teal);font-weight:600;text-decoration:underline;align-self:flex-start}
 .sumgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:16px}
+.sumhead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
 .sumgrid ul.ticks{list-style:none;padding-left:0;gap:6px}
 .ticks label{display:flex;gap:8px;align-items:flex-start;cursor:pointer}
 .ticks input{appearance:none;-webkit-appearance:none;flex:none;width:18px;height:18px;margin:1px 0 0;border:2px solid var(--black);border-radius:3px;background:var(--white);display:grid;place-items:center}
@@ -1308,15 +1309,75 @@ function dbMorning(){
 }
 
 function dbSummary(R,bags){
-  let h='<section class="dbpanel"><div><h2>Your packing checklist</h2><p class="preview" style="margin-top:6px;max-width:70ch">Everything you planned, bag by bag. Check items off as you pack, or print this page and check them off on paper.</p></div><div class="sumgrid">';
-  if(bp.morning.length) h+='<div class="box"><div class="boxh"><span>Race morning</span></div><div class="boxb"><ul class="ticks">'+bp.morning.map(m=>'<li><label><input type="checkbox"><span>'+esc(m.text)+'</span></label></li>').join('')+'</ul></div></div>';
+  let h='<section class="dbpanel"><div class="sumhead"><div><h2>Your packing checklist</h2><p class="preview" style="margin-top:6px;max-width:70ch">Everything you planned, bag by bag. Tick each item as you pack it; your ticks are saved. Or save a PDF to print and check off on paper.</p></div>'+
+    '<button type="button" class="btn primary" data-act="b-pdf"'+(dbPdfBusy?' disabled':'')+'>'+(dbPdfBusy?'Building PDF...':'Save PDF')+'</button></div>'+
+    (dbPdfMsg?'<p class="err" role="alert">'+esc(dbPdfMsg)+'</p>':'')+'<div class="sumgrid">';
+  if(bp.morning.length) h+='<div class="box"><div class="boxh"><span>Race morning</span></div><div class="boxb"><ul class="ticks">'+bp.morning.map((m,j)=>'<li><label><input type="checkbox" data-ck="m" data-j="'+j+'"'+(m.done?' checked':'')+'><span>'+esc(m.text)+'</span></label></li>').join('')+'</ul></div></div>';
   bags.forEach(b=>{
     const bag=bagOf(b.key), w=dbWin(R,b.i), r=R.rows[b.i];
     const sub=b.kind==='start'?'Start, '+clk(0):b.kind==='finish'?'Finish':dShow(r.dist).toFixed(1)+' '+uLabel()+', '+clk(w.early)+' to '+clk(w.late);
     h+='<div class="box"><div class="boxh'+(b.kind==='drop'?' teal':'')+'"><span>'+esc(b.kind==='start'?'Start':b.kind==='finish'?'Finish bag':b.name)+'</span><span class="num" style="font-weight:500;font-size:.85rem">'+bag.items.length+'</span></div><div class="boxb"><small class="muted">'+esc(sub)+'</small>'+
-      (bag.items.length?'<ul class="ticks">'+bag.items.map(it=>'<li><label><input type="checkbox"><span>'+esc(it.name)+(it.qty?' <span class="muted">('+esc(it.qty)+')</span>':'')+'</span></label></li>').join('')+'</ul>':'<p class="preview">Nothing packed yet.</p>')+'</div></div>';
+      (bag.items.length?'<ul class="ticks">'+bag.items.map((it,j)=>'<li><label><input type="checkbox" data-ck="'+esc(b.key)+'" data-j="'+j+'"'+(it.done?' checked':'')+'><span>'+esc(it.name)+(it.qty?' <span class="muted">('+esc(it.qty)+')</span>':'')+'</span></label></li>').join('')+'</ul>':'<p class="preview">Nothing packed yet.</p>')+'</div></div>';
   });
   return h+'</div></section>';
+}
+
+let dbPdfBusy=false, dbPdfMsg='';
+function buildBagPdf(jsPDF){
+  const R=compute(chart), bags=dbBags(R);
+  const doc=new jsPDF({unit:'pt',format:'letter'}), W=doc.internal.pageSize.getWidth(), H=doc.internal.pageSize.getHeight(), M=40;
+  doc.setFillColor(15,72,90); doc.rect(0,0,W,84,'F');
+  try{ doc.addImage(LOGO_SRC,'PNG',M,12,60,60); }catch(e){}
+  doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(8); doc.text("THE WOMEN'S 100 MILER PROJECT DROP BAG CHECKLIST",M+74,30);
+  doc.setFontSize(20); doc.text(chart.name||'Drop bags',M+74,52);
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+  doc.text((chart.startDate?new Date(chart.startDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})+'  |  ':'')+'Start '+fmtClock12(chart.startTime),M+74,68);
+  doc.setFillColor(196,211,213); doc.rect(0,84,W,8,'F');
+  let y=118;
+  const ensure=need=>{ if(y+need>H-36){ doc.addPage(); y=48; } };
+  const box=(x,yy,done)=>{ doc.setDrawColor(17,17,17); doc.setLineWidth(1.2); doc.rect(x,yy-9,11,11);
+    if(done){ doc.setDrawColor(15,72,90); doc.setLineWidth(1.8); doc.line(x+2,yy-3.5,x+4.6,yy-0.8); doc.line(x+4.6,yy-0.8,x+9.5,yy-7); } };
+  const section=(title,sub,rows,teal)=>{
+    ensure(48+Math.min(rows.length,3)*20);
+    if(teal) doc.setFillColor(15,72,90); else doc.setFillColor(0,0,0);
+    doc.rect(M,y,W-2*M,24,'F'); doc.setTextColor(255,255,255); doc.setFont('helvetica','bold'); doc.setFontSize(11.5); doc.text(title,M+10,y+16);
+    if(sub){ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.text(sub,W-M-10,y+16,{align:'right'}); }
+    y+=42;
+    if(!rows.length){ doc.setFont('helvetica','italic'); doc.setFontSize(10); doc.setTextColor(110,124,130); doc.text('Nothing packed yet.',M+10,y); y+=24; return; }
+    rows.forEach(r=>{
+      const lines=doc.splitTextToSize(r.text,W-2*M-40); ensure(lines.length*14+8);
+      box(M+10,y,r.done); doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(17,17,17); doc.text(lines,M+30,y);
+      y+=lines.length*14+6;
+    });
+    y+=14;
+  };
+  // The PDF fonts can't draw emoji, so the poop emoji prints as words.
+  const clean=t=>String(t).replace(/\u{1F4A9}/gu,'Bathroom stop').replace(/[^\x00-\xFF]/g,'').trim();
+  if(bp.morning.length) section('Race morning','',bp.morning.map(m=>({text:clean(m.text)||'To-do',done:m.done})));
+  bags.forEach(b=>{
+    const bag=bagOf(b.key), w=dbWin(R,b.i), r=R.rows[b.i];
+    const title=b.kind==='start'?'Start':b.kind==='finish'?'Finish bag':b.name;
+    const sub=b.kind==='start'?clk(0):b.kind==='finish'?'':dShow(r.dist).toFixed(1)+' '+uLabel()+'  |  '+clk(w.early)+' to '+clk(w.late);
+    section(title,sub,bag.items.map(it=>({text:clean(it.name)+(it.qty?'  ('+clean(it.qty)+')':''),done:it.done})),b.kind==='drop');
+  });
+  return doc;
+}
+async function saveBagPdf(){
+  if(dbPdfBusy) return;
+  dbPdfBusy=true; dbPdfMsg=''; render();
+  try{
+    let jsPDF;
+    try{ jsPDF=await ensurePdfLib(); }catch(e){ dbPdfMsg='The PDF tool couldn\'t load. Check your internet connection and try again.'; return; }
+    const doc=buildBagPdf(jsPDF), name=((chart.name||'race').replace(/[^A-Za-z0-9 ._-]+/g,'').trim().replace(/\s+/g,'-')||'race')+'-drop-bags.pdf';
+    // Same rule as the pace chart PDF: inside Claude use its save prompt; on the website use a normal download.
+    const inClaude=!!(window.claude&&window.claude.use);
+    if(!inClaude){ doc.save(name); return; }
+    const noSave='This Claude view can\'t save files. Open the app on your website to save the PDF.';
+    let dl=null; try{ dl=await window.claude.use('downloads'); }catch(e){}
+    if(!dl){ dbPdfMsg=noSave; return; }
+    try{ await dl.save({filename:name,data:doc.output('blob')}); }
+    catch(e){ const c=e&&e.code; if(c==='declined') return; dbPdfMsg=c==='rate_limited'?'A save prompt is already open. Finish or close it, then try again.':noSave; }
+  } finally { dbPdfBusy=false; render(); }
 }
 
 function dbGo(step){
@@ -1358,6 +1419,7 @@ function dbAct(a,btn){
     }
   }
   if(a==='b-calfocus'){const el=document.querySelector('[data-cal]'); if(el){el.closest('.calbox').scrollIntoView({block:'center',behavior:'smooth'}); el.focus({preventScroll:true}); el.select(); const bx=el.closest('.calbox'); bx.classList.remove('flash'); void bx.offsetWidth; bx.classList.add('flash');} return;}
+  if(a==='b-pdf'){saveBagPdf(); return;}
   if(a==='b-icotoggle'){dbDraft.open=!dbDraft.open; render(); return;}
   if(a==='b-ico'){dbDraft.ico=btn.dataset.ico; dbDraft.open=false; render(); const el=document.getElementById('db-cname'); if(el) el.focus(); return;}
   if(a==='b-unmine'){bp.custom=bp.custom.filter(c=>c.id!==btn.dataset.id);}
@@ -1415,6 +1477,7 @@ app.addEventListener('change',e=>{
     const t=e.target;
     if(t.dataset.pick!=null){const k=t.dataset.pick;bp.picks=bp.picks.filter(x=>x!==k);if(t.checked)bp.picks.push(k);dbErr='';bpSave();render()}
     if(t.id==='db-ccat') dbDraft.cat=t.value;
+    if(t.dataset.ck!=null){ const list=t.dataset.ck==='m'?bp.morning:bagOf(t.dataset.ck).items, x=list[+t.dataset.j]; if(x){x.done=t.checked;bpSave()} }
     if(t.id==='db-date'&&t.value){chart.startDate=t.value;save();render()}
   }
 });
