@@ -512,6 +512,44 @@ function buildPdf(jsPDF){
   doc.text(lines,M,fy);
   return doc;
 }
+/* Excel export. The free SheetJS build can't write colors or bold, so the meaning of the app's colors goes into
+   the Cutoff type and Adjusted columns, and a short note after saving says so. */
+let xlsxBusy=false;
+async function saveXlsx(){
+  if(xlsxBusy) return;
+  xlsxBusy=true; pdfMsg=''; render();
+  try{
+    try{ if(!window.XLSX) await loadScript(XLSX_URL); }catch(e){ pdfMsg='The spreadsheet tool couldn\'t load. Check your internet connection and try again.'; return; }
+    const R=compute(chart), X=window.XLSX, clock=chart.display==='clock', seg=showSeg();
+    let base=null; if(chart.startDate){ const [y,m,d]=chart.startDate.split('-').map(Number); base=(Date.UTC(y,m-1,d)-Date.UTC(1899,11,30))/864e5; }
+    const tcell=t=>(t=Math.round(t),clock?(base!=null?{t:'n',v:base+(chart.startTime+t)/1440,z:'ddd h:mm AM/PM'}:{t:'s',v:showTimePlain(t)}):{t:'n',v:t/1440,z:'[h]:mm'});
+    const head=['Aid station',uLabel()].concat(seg?['Segment ('+uLabel()+')']:[]).concat(R.adv?['Climb ('+eLabel()+')','Descent ('+eLabel()+')']:[])
+      .concat(R.plans.map(p=>p.label+' '+fmtDur(p.target))).concat([chart.labels.cut+' '+fmtDur(R.T),'Cutoff type','Adjusted for cutoff']);
+    const when=(chart.startDate?new Date(chart.startDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})+', start ':'Start ')+fmtClock12(chart.startTime);
+    const aoa=[[chart.name||'Pace chart'],[when+'. Plans arrive at least '+R.margin+' minutes before posted cutoffs. Times are '+(clock?'time of day':'race time (hours:minutes)')+'.'],[],head];
+    const num=(v,z)=>({t:'n',v:+v.toFixed(2),z});
+    R.rows.forEach((r,i)=>{
+      const fe=v=>Math.round(chart.unit==='km'?(+v||0)/FT_PER_M:(+v||0));
+      aoa.push([r.name,num(dShow(r.dist),'0.0')].concat(seg?[r.first?'':num(dShow(r.seg),'0.0')]:[]).concat(R.adv?(r.first?['','']:[fe(r.gain),fe(r.loss)]):[])
+        .concat(R.plans.map(p=>tcell(p.times[i]))).concat([tcell(r.cut),r.first?'':r.hard?'Posted':'Estimated',R.plans.filter(p=>p.pinned.has(i)).map(p=>p.label).join(', ')]));
+    });
+    aoa.push([]);
+    if(R.adv) aoa.push(['Plans factor in climb and descent: each 1,000 ft of climbing counts as 1.9 extra miles; downhills are set to '+DESC_OPTS.find(o=>o[0]===(chart.descent||'mixed'))[1].toLowerCase()+'.']);
+    aoa.push(['Posted cutoffs come from the race; estimated cutoffs are worked out from the overall cutoff. "Adjusted for cutoff" lists plans that were moved earlier to arrive ahead of that cutoff.']);
+    aoa.push(['Made with the Race Planner from The Women\'s 100 Miler Project. These are estimates, so always check the race\'s official information.']);
+    const ws=X.utils.aoa_to_sheet(aoa);
+    ws['!cols']=head.map((h,j)=>({wch:j===0?24:j===head.length-1?20:Math.max(10,String(h).length+2)}));
+    const wb=X.utils.book_new(); X.utils.book_append_sheet(wb,ws,'Pace chart');
+    const name=pdfName().replace(/\.pdf$/,'.xlsx'), note='Your spreadsheet has every column and real times you can do math with. Excel files from the app don\'t keep the colors, so the Cutoff type and Adjusted for cutoff columns show what the red and highlighted times mean.';
+    const inClaude=!!(window.claude&&window.claude.use);
+    if(!inClaude){ X.writeFile(wb,name); pdfMsg=note; return; }
+    const noSave='This Claude view can\'t save files. Open the app on claude.ai in a web browser, or use the version on your website, to save the spreadsheet.';
+    let dl=null; try{ dl=await window.claude.use('downloads'); }catch(e){}
+    if(!dl){ pdfMsg=noSave; return; }
+    try{ await dl.save({filename:name,data:new Blob([X.write(wb,{bookType:'xlsx',type:'array'})],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})}); pdfMsg=note; }
+    catch(e){ const c=e&&e.code; if(c==='declined') return; pdfMsg=c==='rate_limited'?'A save prompt is already open. Finish or close it, then try again.':noSave; }
+  } finally { xlsxBusy=false; render(); }
+}
 function pdfName(){return ((chart.name||'pace chart').replace(/[^A-Za-z0-9 ._-]+/g,'').trim().replace(/\s+/g,'-')||'pace-chart')+'-pace-chart.pdf'}
 async function savePdf(){
   if(pdfBusy) return;
@@ -725,7 +763,7 @@ function renderChart(){
   let h='';
   h+='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><h1>'+esc(chart.name||'Untitled race')+' <span class="kind">Pace Chart</span></h1>'+
      '<span class="muted num">'+dShow(R.D).toFixed(1)+' '+uLabel()+' · '+(R.rows.length-2)+' aid stations · start '+fmtClock12(chart.startTime)+(chart.startDate?' '+esc(new Date(chart.startDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})):'')+'</span></div></div>'+
-     '<div class="actions"><button class="btn" data-act="pdf" type="button"'+(pdfBusy?' disabled':'')+'>'+(pdfBusy?'Building PDF...':'Save PDF')+'</button><button class="btn" data-act="copy" type="button">Copy table</button><button class="btn" data-act="b-open" type="button">Drop bags</button><button class="btn" data-act="edit" type="button">Edit chart</button><button class="btn primary" data-act="r-race" type="button">Race home</button></div></div></header><div class="greyband bleed"></div>';
+     '<div class="actions"><button class="btn" data-act="pdf" type="button"'+(pdfBusy?' disabled':'')+'>'+(pdfBusy?'Building PDF...':'Save PDF')+'</button><button class="btn" data-act="xlsx" type="button"'+(xlsxBusy?' disabled':'')+'>'+(xlsxBusy?'Building...':'Save Excel')+'</button><button class="btn" data-act="copy" type="button">Copy table</button><button class="btn" data-act="b-open" type="button">Drop bags</button><button class="btn" data-act="edit" type="button">Edit chart</button><button class="btn primary" data-act="r-race" type="button">Race home</button></div></div></header><div class="greyband bleed"></div>';
   if(pdfMsg) h+='<div class="banner"><p>'+esc(pdfMsg)+'</p></div>';
   if(chart.isExample){
     h+='<div class="banner"><p><b>Example loaded from pacechart.xlsx.</b> Pickett and Sawmill are treated as having no posted cutoff, and the 6:00 AM start is a placeholder. Use <b>Edit chart</b> to fix either, or <b>New chart</b> to set up another race.</p></div>';
@@ -2015,6 +2053,7 @@ app.addEventListener('click',e=>{
   if(a==='closecopy'){copyText=null;render()}
   if(a==='next'){goNext()}
   if(a==='pdf'){savePdf()}
+  if(a==='xlsx'){saveXlsx()}
 });
 app.addEventListener('change',e=>{
   if(view==='wiz' && wiz && wiz.step===1 && (e.target.name==='w-unit'||e.target.name==='w-cf')){readWizInputs();render()}
