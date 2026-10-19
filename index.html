@@ -922,7 +922,7 @@ function dbCtx(R,bags,k){
   const b=bags[k], w=dbWin(R,b.i), ctx={b,w};
   if(b.kind!=='finish'){
     const nx=bags[k+1], nw=dbWin(R,nx.i);
-    Object.assign(ctx,{next:nx,nw,from:w.early,to:nw.late,nextName:nx.kind==='finish'?'the finish':nx.name});
+    Object.assign(ctx,{next:nx,nw,from:w.early,to:nw.late,nextName:nx.kind==='finish'?'the finish':nx.name,nextBag:nx.kind==='finish'?'the finish':nx.name+' drop bag'});
     // Time for this stretch in each column. Suggestions use the slowest one.
     ctx.legs=R.plans.map(p=>({label:p.label,mins:p.times[nx.i]-p.times[b.i]}));
     ctx.legs.push({label:chart.labels.cut,mins:R.rows[nx.i].cut-R.rows[b.i].cut,cut:true});
@@ -936,7 +936,7 @@ function dbCtx(R,bags,k){
 function dbSuggest(b,ctx){
   const out=[], add=(id,qty,why)=>{ if(!out.some(o=>o.id===id)) out.push({id,name:DB_BYID[id].name,qty:qty||'',why}); };
   if(b.kind==='finish'){ ['dryshoes','drysocks','change','hoodie'].forEach(id=>add(id,'','For after you finish')); return out; }
-  const x=ctx.wx, h=ctx.hours, span=fmtHrs(ctx.mins)+' to '+ctx.nextName+' at '+ctx.slow.label+' pace';
+  const x=ctx.wx, h=ctx.hours, span=fmtHrs(ctx.mins)+' to '+ctx.nextBag+' at '+ctx.slow.label+' pace';
   ['musher','sanitizer','socks','wipes'].forEach(id=>add(id,'','Foot care kit, every bag'));
   add('salt','1 small bag','Every bag');
   add('tums','','Every bag');
@@ -1103,7 +1103,7 @@ function dbBagView(R,bags,k){
   }
   if(b.kind!=='finish'){
     const x=ctx.wx;
-    h+='<div class="cond leg"><span class="eyebrow">To '+esc(ctx.nextName)+'</span>'+
+    h+='<div class="cond leg"><span class="eyebrow">To '+esc(ctx.nextBag)+'</span>'+
        '<span class="v num">'+dShow(ctx.miNext).toFixed(1)+' '+uLabel()+'</span>'+
        '<small class="ai">Next aid station: '+esc(ctx.aidName)+', '+dShow(ctx.miAid).toFixed(1)+' '+uLabel()+'</small>'+
        '<ul class="legs">'+ctx.legs.map(l=>'<li'+(l===ctx.slow?' class="slow"':'')+'><span>'+esc(l.label)+'</span><b class="num">'+fmtHrs(l.mins)+'</b></li>').join('')+'</ul>'+
