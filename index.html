@@ -939,6 +939,8 @@ function dbCtx(R,bags,k){
     // If she could reach this bag after dark, the stretch before it already told her to carry a headlamp.
     ctx.hasLamp=k>0&&isDark(w.late);
     ctx.needLamp=ctx.wx.darkMin>0&&!ctx.hasLamp;
+    ctx.gap=null;
+    for(let j=b.i;j<nx.i;j++){const d=R.rows[j+1].dist-R.rows[j].dist; if(!ctx.gap||d>ctx.gap.mi) ctx.gap={mi:d,from:R.rows[j].first?'the start':R.rows[j].name,to:R.rows[j+1].last?'the finish':R.rows[j+1].name};}
     const na=R.rows[b.i+1]; ctx.aidName=na.last?'the finish':na.name; ctx.miAid=na.dist-R.rows[b.i].dist;
   }
   return ctx;
@@ -956,7 +958,7 @@ function dbSuggest(b,ctx){
   add('buff','','Every bag');
   const lo='Low of '+fmtT(x.lo)+' before '+ctx.nextName;
   if(x.lo<55) add('lightlayer','',lo);
-  if(x.lo<40) ['gloves','tights','extralayer'].forEach(id=>add(id,'',lo));
+  if(x.lo<40) ['beanie','gloves','extralayer','tights'].forEach(id=>add(id,'',lo));
   if(x.lo<35) add('jacket','',lo);
   if(x.hi>80) ['sunscreen','hat','icebandana','extrasalt'].forEach(id=>add(id,'','High of '+fmtT(x.hi)));
   if(x.rain>=40) ['rainjacket','zipbag'].forEach(id=>add(id,'','Up to '+x.rain+'% chance of rain'));
@@ -1126,19 +1128,36 @@ function dbBagView(R,bags,k){
   h+='</div>';
 
   const sugg=dbSuggest(b,ctx), have=new Set(bag.items.map(it=>it.id)), dis=new Set(bag.dismissed);
-  const MUST=new Set(['headlamp','batteries']);
-  const open=sugg.filter(s=>!have.has(s.id)&&!dis.has(s.id)).sort((a,b)=>(MUST.has(b.id)&&!!ctx.needLamp)-(MUST.has(a.id)&&!!ctx.needLamp)), nDis=sugg.filter(s=>dis.has(s.id)&&!have.has(s.id)).length;
-  // Darkness before the next drop bag: a headlamp is a must.
+  // Warnings: things she really shouldn't leave this bag without. Each turns green once its items are in the bag.
+  const alerts=[], x=ctx.wx;
   if(ctx.needLamp){
-    const ss=ctx.wx.events.find(e=>e.type==='sunset'), packed=have.has('headlamp');
-    const why=ss?'Sunset is at '+fmtClock12(SAMPLE_SUNSET)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.';
-    h+='<div class="alert'+(packed?' ok':'')+'" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>'+(packed?'Headlamp packed.':'Pack a headlamp.')+'</b> '+esc(why)+
-       (packed?(have.has('batteries')?'':' Add headlamp batteries too.'):' Plan on about '+esc(fmtHrs(ctx.wx.darkMin))+' in the dark, so bring headlamp batteries as well.')+'</div></div>';
-  } else if(ctx.hasLamp&&ctx.wx.darkMin>0){
-    h+='<div class="alert info" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>Headlamp check.</b> '+(isDark(w.early)?'You\'ll arrive in the dark, so your headlamp should already be on.':'You may arrive after dark, so you should already be carrying your headlamp from your last bag.')+' There\'s up to '+esc(fmtHrs(ctx.wx.darkMin))+' more of darkness before '+esc(ctx.nextBag)+'. '+
+    const ss=x.events.find(e=>e.type==='sunset');
+    alerts.push({items:['headlamp','batteries'],ico:'headlamp',todo:'Pack a headlamp.',done:'Headlamp packed.',
+      why:(ss?'Sunset is at '+fmtClock12(SAMPLE_SUNSET)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark, so bring headlamp batteries as well.'});
+  }
+  if(x&&x.lo<40){
+    alerts.push({items:['beanie','gloves','extralayer'],ico:'beanie',todo:'Pack warm gear.',done:'Warm gear packed.',
+      why:'It could drop to '+fmtT(x.lo)+' before '+ctx.nextBag+'. Bring a warm hat, gloves, and an extra layer.'});
+  } else if(x&&x.lo<50){
+    alerts.push({items:['lightlayer'],ico:'lightlayer',todo:'Pack a layer.',done:'Layer packed.',
+      why:'It could drop to '+fmtT(x.lo)+' before '+ctx.nextBag+'. Bring a layer you can put on as it cools off.'});
+  }
+  if(ctx.gap&&ctx.gap.mi>8){
+    alerts.push({items:['cal'],ico:'cal',todo:'Long gap between aid stations.',done:'Calories packed for the long gap.',
+      why:'There\'s '+dShow(ctx.gap.mi).toFixed(1)+' '+uLabel()+' between '+ctx.gap.from+' and '+ctx.gap.to+' with no aid. Carry extra calories and fluids for that stretch.'});
+  }
+  const MUST=new Set(); alerts.forEach(a=>a.items.forEach(id=>MUST.add(id)));
+  const open=sugg.filter(s=>!have.has(s.id)&&!dis.has(s.id)).sort((a,b)=>MUST.has(b.id)-MUST.has(a.id)), nDis=sugg.filter(s=>dis.has(s.id)&&!have.has(s.id)).length;
+  alerts.forEach(a=>{
+    const missing=a.items.filter(id=>!have.has(id)), packed=!missing.length;
+    const names=missing.map(id=>(DB_BYID[id]||{name:id}).name.toLowerCase());
+    h+='<div class="alert'+(packed?' ok':'')+'" role="status"><span class="aico">'+icon(a.ico)+'</span><div><b>'+esc(packed?a.done:a.todo)+'</b> '+esc(a.why)+
+       (!packed&&missing.length<a.items.length?' Still missing: '+esc(names.join(', '))+'.':'')+'</div></div>';
+  });
+  if(!ctx.needLamp&&ctx.hasLamp&&x.darkMin>0){
+    h+='<div class="alert info" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>Headlamp check.</b> '+(isDark(w.early)?'You\'ll arrive in the dark, so your headlamp should already be on.':'You may arrive after dark, so you should already be carrying your headlamp from your last bag.')+' There\'s up to '+esc(fmtHrs(x.darkMin))+' more of darkness before '+esc(ctx.nextBag)+'. '+
        'Will your batteries last that long? If not, pack spares in this bag. Pack a spare headlamp only if yours might fail or be left behind.</div></div>';
   }
-
 
   h+='<div class="fun">';
   // the bag
@@ -1162,7 +1181,7 @@ function dbBagView(R,bags,k){
   if(!open.length) h+='<p class="preview">'+(sugg.length?'You\'ve handled every suggestion for this bag.':'No suggestions for this bag.')+'</p>';
   h+='<div class="tiles sug">';
   open.forEach(s=>{
-    const must=MUST.has(s.id)&&!!ctx.needLamp;
+    const must=MUST.has(s.id);
     h+='<div class="tilewrap"><button type="button" class="tile sug'+(must?' must':'')+'" data-drag data-act="b-add" data-id="'+s.id+'" title="'+esc(s.why)+'">'+
        '<span class="tico">'+icon(s.id)+'</span><span class="tnm">'+esc(s.name)+'</span>'+(s.qty&&s.id==='cal'?'<span class="tqty">'+esc(s.qty)+'</span>':'')+
        (must?'<span class="mustb">Must have</span>':'')+'<span class="twhy">'+esc(s.why)+'</span></button>'+
