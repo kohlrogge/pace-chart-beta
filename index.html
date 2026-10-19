@@ -1182,8 +1182,12 @@ function hasWx(){ return !!(bp.wx&&bp.wx.locs&&bp.wx.locs.race&&!bp.wx.err); }
 function locAtDist(d){
   if(!hasWx()) return null;
   let best=null, bd=Infinity;
-  // The nearest aid station that has its own location wins.
-  (chart.stations||[]).forEach(s=>{ const L=bp.wx.locs['s:'+stKey(s)], dd=Math.abs(s.dist-d); if(L&&dd<bd){bd=dd;best=L;} });
+  // Use the last location at or before this point that has weather (the drop bag you just left).
+  // Before the first one, use the first one ahead.
+  const ok=L=>L&&L.h&&Object.keys(L.h).length;
+  let first=null;
+  (chart.stations||[]).forEach(s=>{ const L=bp.wx.locs['s:'+stKey(s)]; if(!ok(L)) return; if(!first) first=L; if(s.dist<=d+1e-6){best=L;} });
+  best=best||first;
   return best||bp.wx.locs.race;
 }
 // Short time zone name (EDT, CDT...) for a location on the race day. Sun times are in that spot's local time.
@@ -1214,13 +1218,15 @@ function dbWx(from,to,d0,d1){
 function evText(ev){const c=clockParts(ev.el);return (ev.type==='sunset'?'Sunset ':'Sunrise ')+dayLabel(c.day)+' '+fmtClock12(ev.at)+tzSfx(ev.tz,ev.el)}
 
 // What to fetch: the race location plus every aid station the runner gave a location.
-function raceLoc(){ const f=chart&&chart.stations?chart.stations.map(st=>(bp.locs||{})[stKey(st)]).find(okLoc):null; return f||(okLoc(bp.loc)?bp.loc:null); }
+// Locations are only asked for at the start and the drop bag stations.
+function locKeys(){ if(!chart||!chart.stations||!chart.stations.length) return []; const p=new Set(bp.picks||[]); return chart.stations.filter((s,i)=>i===0||p.has(stKey(s))).map(stKey); }
+function raceLoc(){ const f=locKeys().map(k=>(bp.locs||{})[k]).find(okLoc); return f||(okLoc(bp.loc)?bp.loc:null); }
 function wxPlan(){
   const RL=raceLoc();
   if(!chart||!chart.startDate||!RL) return null;
   const R=compute(chart), span=Math.ceil((chart.startTime+R.T)/1440)+1;
   const locs=[{key:'race',lat:RL.lat,lon:RL.lon}];
-  Object.entries(bp.locs||{}).forEach(([k,l])=>{ if(okLoc(l)&&chart.stations.some(s=>stKey(s)===k)) locs.push({key:'s:'+k,lat:l.lat,lon:l.lon}); });
+  locKeys().forEach(k=>{ const l=(bp.locs||{})[k]; if(okLoc(l)) locs.push({key:'s:'+k,lat:l.lat,lon:l.lon}); });
   const start=baseUTC(), end=start+(span-1)*864e5, today=Date.parse(isoDay(Date.now()));
   const kind=(end-today)/864e5<=15&&(start-today)>-864e5*3?'forecast':'typical';
   return {locs,start,end,kind,sig:JSON.stringify([chart.startDate,chart.startTime,span,locs,kind])};
@@ -1352,12 +1358,10 @@ function stLocRow(s,i){
 function dbLocBox(){
   const picked=new Set(bp.picks||[]), st=chart.stations, last=st.length-1;
   let h='<div class="locbox"><h3>Where are your drop bags?</h3>'+
-    '<p class="preview">Give the start and each drop bag station a nearby town or its GPS coordinates. Any aid station without one uses the closest one you set. The weather and daylight for each stretch come from the closest location, which matters on long courses where the weather changes along the way. Only locations and dates are sent to the weather service.</p>';
+    '<p class="preview">Give the start and each drop bag station a nearby town or its GPS coordinates. Each stretch uses the weather and daylight from the last drop bag you left, so on long courses the forecast follows you as you go. If a spot has no weather, the one before it is used. Only locations and dates are sent to the weather service.</p>';
   const rows=st.map((s,i)=>i===0||picked.has(stKey(s))?stLocRow(s,i):'').join('');
   h+='<div class="coordrows">'+(picked.size?rows:'<p class="preview">Check your drop bag stations above, and they\'ll show up here.</p>')+'</div>';
-  const others=st.map((s,i)=>i!==0&&!picked.has(stKey(s))?stLocRow(s,i):'').join(''), nOther=st.filter((s,i)=>i!==0&&!picked.has(stKey(s))&&okLoc((bp.locs||{})[stKey(s)])).length;
-  h+='<details class="paste"'+(nOther?' open':'')+'><summary>Other aid stations (optional)'+(nOther?' · '+nOther+' set':'')+'</summary><p class="preview">More locations make the weather between drop bags more accurate.</p><div class="coordrows">'+others+'</div></details>';
-  h+='<details class="paste"'+(pasteErr?' open':'')+'><summary>Paste coordinates for every aid station</summary><p class="preview">One aid station per line, in race order, with latitude and longitude, like <span class="num">Pickett, 36.55, -84.80</span>. You can paste straight from a spreadsheet.</p>'+
+  h+='<details class="paste"'+(pasteErr?' open':'')+'><summary>Have coordinates for the whole course? Paste them</summary><p class="preview">One aid station per line, in race order, with latitude and longitude, like <span class="num">Pickett, 36.55, -84.80</span>. You can paste straight from a spreadsheet. Only the start and your drop bag stations are used.</p>'+
      '<textarea id="db-pastelocs" class="in" placeholder="Start, 36.49, -84.70&#10;Pickett, 36.55, -84.80"></textarea>'+(pasteErr?'<p class="err" role="alert">'+esc(pasteErr)+'</p>':'')+
      '<div style="margin-top:8px"><button type="button" class="btn" data-act="b-pastelocs">Use these</button></div></details>';
   return h+'</div>';
