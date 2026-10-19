@@ -1186,6 +1186,11 @@ function locAtDist(d){
   (chart.stations||[]).forEach(s=>{ const L=bp.wx.locs['s:'+stKey(s)], dd=Math.abs(s.dist-d); if(L&&dd<bd){bd=dd;best=L;} });
   return best||bp.wx.locs.race;
 }
+// Short time zone name (EDT, CDT...) for a location on the race day. Sun times are in that spot's local time.
+function tzAbbr(tz,el){ if(!tz) return ''; try{ const [y,m,d]=(chart.startDate||'2000-01-01').split('-').map(Number), dt=new Date(Date.UTC(y,m-1,d,17)+Math.round(el||0)*60000);
+  return new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'short'}).formatToParts(dt).find(p=>p.type==='timeZoneName').value; }catch(e){ return ''; } }
+function tzSfx(tz,el){ const a=tzAbbr(tz,el); return a?' '+a:''; }
+function wxZones(){ if(!hasWx()) return []; return [...new Set(Object.values(bp.wx.locs).map(l=>tzAbbr(l.tz,0)).filter(Boolean))]; }
 function sunOf(el){ const L=curLoc&&curLoc.sun&&curLoc.sun[mdKey(elDate(el))]; return L?{rise:L[0],set:L[1]}:{rise:SAMPLE_SUNRISE,set:SAMPLE_SUNSET}; }
 function isDark(el){const t=todOf(el), s=sunOf(el);return t<s.rise||t>=s.set}
 function wxAt(el){
@@ -1201,12 +1206,12 @@ function dbWx(from,to,d0,d1){
     if(d0!=null&&hasWx()) curLoc=locAtDist(d0+(d1-d0)*(to>from?(el-from)/(to-from):0));
     const w=wxAt(el);lo=Math.min(lo,w.lo);hi=Math.max(hi,w.hi);rain=Math.max(rain,w.rain);
     const d=isDark(el); if(d&&el<to) darkMin+=Math.min(step,to-el);
-    if(prev!==null&&d!==prev){ const s=sunOf(el); events.push({type:d?'sunset':'sunrise',el,at:d?s.set:s.rise}); } prev=d;
+    if(prev!==null&&d!==prev){ const s=sunOf(el); events.push({type:d?'sunset':'sunrise',el,at:d?s.set:s.rise,tz:hasWx()&&curLoc?curLoc.tz:''}); } prev=d;
   }
   curLoc=keep;
   return {lo:Math.round(lo),hi:Math.round(hi),rain:Math.round(rain),darkMin,events};
 }
-function evText(ev){const c=clockParts(ev.el);return (ev.type==='sunset'?'Sunset ':'Sunrise ')+dayLabel(c.day)+' '+fmtClock12(ev.at)}
+function evText(ev){const c=clockParts(ev.el);return (ev.type==='sunset'?'Sunset ':'Sunrise ')+dayLabel(c.day)+' '+fmtClock12(ev.at)+tzSfx(ev.tz,ev.el)}
 
 // What to fetch: the race location plus every aid station the runner gave a location.
 function raceLoc(){ const f=chart&&chart.stations?chart.stations.map(st=>(bp.locs||{})[stKey(st)]).find(okLoc):null; return f||(okLoc(bp.loc)?bp.loc:null); }
@@ -1239,7 +1244,7 @@ async function fetchAll(plan){
     const arr=await fetchBatch(plan.locs,'https://api.open-meteo.com/v1/forecast','&hourly=temperature_2m,precipitation_probability&start_date='+isoDay(plan.start)+'&end_date='+isoDay(plan.end));
     arr.forEach((j,n)=>{ const o=res[plan.locs[n].key];
       j.hourly.time.forEach((t,i)=>{const T=j.hourly.temperature_2m[i], p=j.hourly.precipitation_probability[i]; if(T!=null) o.h[t.slice(5,13)]=[T,T,T,p==null?0:p];});
-      sunFrom(j,o); });
+      sunFrom(j,o); o.tz=j.timezone; });
   } else {
     const s0=new Date(plan.start), yr=s0.getUTCFullYear(), today=Date.now(), years=[];
     for(let y=yr-1;years.length<3&&y>yr-8;y--){ const s=Date.UTC(y,s0.getUTCMonth(),s0.getUTCDate()); if(s+(plan.end-plan.start)<today-6*864e5) years.push(s); }
@@ -1251,7 +1256,7 @@ async function fetchAll(plan){
           // Rain "chance": did that year see measurable rain within 3 hours either side of this hour?
           let wet=false; for(let d=-3;d<=3;d++){const v=P[i+d]; if(v!=null&&v>=0.2){wet=true;break}}
           (per[n][k]=per[n][k]||[]).push([T[i],wet]); });
-        const o=res[plan.locs[n].key]; if(!Object.keys(o.sun).length) sunFrom(j,o); });
+        const o=res[plan.locs[n].key]; o.tz=j.timezone; if(!Object.keys(o.sun).length) sunFrom(j,o); });
     }
     plan.locs.forEach((l,n)=>{ const o=res[l.key]; o.years=years.map(s=>new Date(s).getUTCFullYear());
       Object.entries(per[n]).forEach(([k,a])=>{const ts=a.map(x=>x[0]);o.h[k]=[Math.min(...ts),Math.max(...ts),ts.reduce((s,v)=>s+v,0)/ts.length,Math.round(100*a.filter(x=>x[1]).length/a.length)];}); });
@@ -1260,7 +1265,7 @@ async function fetchAll(plan){
 }
 async function loadWx(force){
   const plan=wxPlan(); if(!plan||wxBusy) return;
-  const fresh=bp.wx&&bp.wx.sig===plan.sig&&!bp.wx.err&&(plan.kind==='typical'||Date.now()-bp.wx.at<3*36e5);
+  const fresh=bp.wx&&bp.wx.sig===plan.sig&&!bp.wx.err&&(plan.kind==='typical'||Date.now()-bp.wx.at<3*36e5)&&bp.wx.locs&&Object.values(bp.wx.locs).every(l=>l.tz);   // older saves lack time zones
   if(fresh&&!force) return;
   wxBusy=true; render();
   try{ bp.wx={sig:plan.sig,kind:plan.kind,at:Date.now(),locs:await fetchAll(plan)}; }
@@ -1327,9 +1332,10 @@ function wxBanner(){
   if(!hasWx()) return '<div class="banner"><p>Weather hasn\'t loaded yet.</p><button type="button" class="btn sm" data-act="b-wx">Get weather</button></div>';
   const n=Math.max(1,Object.keys(bp.wx.locs).length-1), where=n>1?'your '+n+' locations':esc(raceLoc().name);
   const at=new Date(bp.wx.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-  if(bp.wx.kind==='forecast') return '<div class="banner"><p><b>Forecast for '+where+'</b>, updated '+esc(at)+'. Forecasts change, so check again the day before you pack.</p><button type="button" class="btn sm" data-act="b-wx">Refresh</button></div>';
+  const zs=wxZones(), zn=zs.length>1?' <b>Heads up: your locations are in more than one time zone ('+zs.join(' and ')+').</b> Sunrise and sunset are shown in each spot\'s local time; your arrival times are whatever clock your pace chart uses.':zs.length?' Sunrise and sunset are in '+zs[0]+'.':'';
+  if(bp.wx.kind==='forecast') return '<div class="banner"><p><b>Forecast for '+where+'</b>, updated '+esc(at)+'. Forecasts change, so check again the day before you pack.'+zn+'</p><button type="button" class="btn sm" data-act="b-wx">Refresh</button></div>';
   const ys=(bp.wx.locs.race.years||[]);
-  return '<div class="banner"><p><b>Typical weather for '+where+'</b> on your race dates'+(ys.length?' in '+ys.join(', '):'')+'. Warnings use the coldest and hottest of those years. The real forecast shows up within about two weeks of race day.</p></div>';
+  return '<div class="banner"><p><b>Typical weather for '+where+'</b> on your race dates'+(ys.length?' in '+ys.join(', '):'')+'. Warnings use the coldest and hottest of those years. The real forecast shows up within about two weeks of race day.'+zn+'</p></div>';
 }
 
 function stLocRow(s,i){
@@ -1559,7 +1565,7 @@ function dbBagView(R,bags,k){
     h+=cond('You arrive',esc(clk(w.early))+'<br>to '+esc(clk(w.late)),esc(w.eLab)+' to '+esc(w.lLab));
     const d1=isDark(w.early),d2=isDark(w.late);
     const lightTxt=d1&&d2?'Dark':!d1&&!d2?'Daylight':(d1?'Dark or daylight':'Daylight or dark');
-    const lightNote=d1===d2?(d1?'Arriving after dark':'Arriving in daylight'):(!d1?'Sunset '+fmtClock12(sunOf(w.early).set)+', you may arrive after dark':'Sunrise '+fmtClock12(sunOf(w.late).rise)+', you may arrive in the dark');
+    const lightNote=d1===d2?(d1?'Arriving after dark':'Arriving in daylight'):(!d1?'Sunset '+fmtClock12(sunOf(w.early).set)+(hasWx()&&curLoc?tzSfx(curLoc.tz,w.early):'')+', you may arrive after dark':'Sunrise '+fmtClock12(sunOf(w.late).rise)+(hasWx()&&curLoc?tzSfx(curLoc.tz,w.late):'')+', you may arrive in the dark');
     h+=cond('Light',lightTxt,lightNote,d1&&d2?'dark':'');
   }
   if(b.kind!=='finish'){
@@ -1589,7 +1595,7 @@ function dbBagView(R,bags,k){
   if(ctx.needLamp){
     const ss=x.events.find(e=>e.type==='sunset');
     alerts.push({items:['headlamp','batteries'],ico:'headlamp',todo:'Pack a headlamp.',done:'Headlamp packed.',
-      why:(ss?'Sunset is at '+fmtClock12(ss.at)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark, so bring headlamp batteries as well.'});
+      why:(ss?'Sunset is at '+fmtClock12(ss.at)+tzSfx(ss.tz,ss.el)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark, so bring headlamp batteries as well.'});
   }
   // Warm gear and layers: if an earlier bag (or the start) already has it, ask whether she still has it instead of repeating the warning.
   const SAT={lightlayer:['lightlayer','extralayer','longsleeve','jacket','windshell','rainjacket'],extralayer:['extralayer','jacket'],beanie:['beanie'],gloves:['gloves'],rainjacket:['rainjacket']};
