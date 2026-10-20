@@ -1535,8 +1535,8 @@ function dbSuggest(b,ctx){
   if(x.hi>75) ['extrasalt','bottle'].forEach(id=>add(id,'','High of '+fmtT(x.hi)+' before '+ctx.nextBag));
   if(x.hi>80) ['sunscreen','hat','icebandana'].forEach(id=>add(id,'','High of '+fmtT(x.hi)));
   if(x.rain>=40) ['rainjacket','zipbag'].forEach(id=>add(id,'','Up to '+x.rain+'% chance of rain'));
-  if(ctx.needLamp) ['headlamp','batteries','backuplight'].forEach(id=>add(id,'','About '+fmtHrs(x.darkMin)+' in the dark before '+ctx.nextBag));
-  else if(ctx.maybeLamp) add('headlamp','','Just in case: at '+orList(ctx.maybeLamp.labels)+' pace you\'d hit dark before '+ctx.nextBag);
+  if(ctx.needLamp) ['headlamp','batteries','backuplight'].forEach(id=>add(id,'','About '+fmtHrs(x.darkMin)+' in the dark before '+ctx.nextBag+(id==='batteries'?', if your headlamp needs them':'')));
+  else if(ctx.maybeLamp){ const why='Just in case: at '+orList(ctx.maybeLamp.labels)+' pace you\'d hit dark before '+ctx.nextBag; add('headlamp','',why); add('batteries','',why+', if your headlamp needs them'); }
   else if(x.darkMin>0) add('batteries','','Fresh batteries in case yours run low before '+ctx.nextBag);
   add('coffee',x.darkMin>=180?'x2':'x1',x.darkMin>=180?'Two for running through the night':'Caffeine, every bag');
   if(b.kind==='drop'){
