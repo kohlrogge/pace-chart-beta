@@ -147,6 +147,8 @@ td.adj .t{color:var(--adj)}
 .stbox{overflow-x:auto}
 .sttable{min-width:560px}
 .sttable.plantable{min-width:0;max-width:640px}
+.sttable.adv{min-width:860px}
+.sttable.rowsort td:nth-child(2) .in{min-width:9rem}
 .sttable td,.sttable th{padding:6px;text-align:left;border-bottom:1px solid #dde6e8;background:transparent!important}
 .sttable thead th{background:transparent;color:var(--muted);font-weight:600}
 .sttable td.idx{color:var(--muted);width:24px;text-align:right}
@@ -856,9 +858,9 @@ function newDraft(from){
     plans:c.plans.map(p=>({label:p.label,timeText:p.time!=null?fmtDur(p.time):''})),totalText:c.total!=null?fmtDur(c.total):'',
     rows:[]};
   d.adv=!!c.adv; d.descent=c.descent||'mixed'; d.raceTz=c.raceTz||'';
-  if(c.manual){ d.mode='bags'; d.wins=c.stations.map((s,i)=>{const w=c.windows&&c.windows[i]; return w?{e:fmtClock12(c.startTime+w.early),l:fmtClock12(c.startTime+w.late)}:{e:'',l:''}}); }
+  if(c.manual){ d.mode='bags'; d.wins=c.stations.map((s,i)=>{const w=c.windows&&c.windows[i]; return w?{e:draftClock(c,w.early),l:draftClock(c,w.late)}:{e:'',l:''}}); }
   d.rows=c.stations.map(s=>({name:s.name,distText:s.dist==null?'':String(+(eu==='km'?s.dist*KM:s.dist).toFixed(2)),
-    cutText:s.cutoff==null?'':(d.cutoffFormat==='clock'?fmtClock12(c.startTime+s.cutoff):fmtDur(s.cutoff)),
+    cutText:s.cutoff==null?'':(d.cutoffFormat==='clock'?draftClock(c,s.cutoff):fmtDur(s.cutoff)),origKey:stKey(s),
     gainText:s.gain==null?'':String(Math.round(eu==='km'?s.gain/FT_PER_M:s.gain)),lossText:s.loss==null?'':String(Math.round(eu==='km'?s.loss/FT_PER_M:s.loss))}));
   return d;
 }
@@ -883,11 +885,23 @@ function readWizInputs(){
 
 // Elevation cells: blank is unknown (counted as 0); accepts 1,200 or +1200 or 1200 ft. Returns false if unreadable.
 function parseElev(t){ t=String(t||'').replace(/[,+\s]|ft|feet|m\b|-/gi,''); if(!t) return null; const v=parseFloat(t); return isNaN(v)||v<0?false:v; }
+/* Clock times in setup are read in the race's time zone. naive = minutes after the start counting every day as 24 hours;
+   on a daylight saving weekend the real race time differs by an hour, so convert through the actual date. */
+function wizReal(naive){
+  if(!wiz.startDate) return naive;
+  const tz=wiz.raceTz||DEV_TZ, [y,m,d]=wiz.startDate.split('-').map(Number), sm=startMin(), tot=sm+naive, day=Math.floor(tot/1440);
+  return Math.round((zonedUTC(y,m,d+day,tot-day*1440,tz)-zonedUTC(y,m,d,sm,tz))/60000);
+}
+function draftClock(c,el){
+  if(!c.startDate) return fmtClock12(c.startTime+el);
+  const tz=c.raceTz||DEV_TZ, [y,m,d]=c.startDate.split('-').map(Number);
+  return fmtClock12(localParts(zonedUTC(y,m,d,c.startTime,tz)+Math.round(el)*60000,tz).min);
+}
 function startMin(){const v=parseClock(wiz.startText);return (v==null||isNaN(v))?NaN:v}
 
 function buildStations(syntaxOnly){
   // returns {stations} or {err}. syntaxOnly: check clock cutoffs' format without converting (start time not known yet)
-  const rows=wiz.rows, out=[]; let prevD=-1, prevCut=0;
+  const rows=wiz.rows, out=[]; let prevD=-1, prevCut=0, prevNaive=0;
   const sm=startMin();
   for(let i=0;i<rows.length;i++){
     const r=rows[i], name=r.name.trim()||(i===0?'Start':i===rows.length-1?'Finish':'');
@@ -902,7 +916,7 @@ function buildStations(syntaxOnly){
         const c=parseClock(r.cutText); if(c==null||isNaN(c)) return {err:'The cutoff for '+name+' should look like 6:00 PM or 18:00.'};
         if(syntaxOnly){cut=1; out.push({name,dist:d,cutoff:cut}); continue}
         if(isNaN(sm)) return {err:'Add a valid start time in step 2 so time-of-day cutoffs can be converted.'};
-        let e=((c-sm)%1440+1440)%1440; while(e<=prevCut) e+=1440; cut=e;
+        let e=((c-sm)%1440+1440)%1440; while(e<=prevNaive) e+=1440; prevNaive=e; cut=wizReal(e);
       } else {
         const c=parseDur(r.cutText); if(c==null||isNaN(c)) return {err:'The cutoff for '+name+' should be hours:minutes of race time, like 14:25.'};
         if(c<=prevCut) return {err:'The cutoff for '+name+' has to be later than the cutoff before it.'};
@@ -970,7 +984,7 @@ function buildWins(){
     if(ec==null||isNaN(ec)||lc==null||isNaN(lc)) return {err:'Times for '+name+' should look like 2:30 PM or 14:30.'};
     const roll=(tod,prev)=>{let x=((tod-sm)%1440+1440)%1440; while(x<prev) x+=1440; return x;};
     const e=roll(ec,pe), l=roll(lc,Math.max(pl,e));
-    out.push({early:e,late:l}); pe=e; pl=l;
+    out.push({early:wizReal(e),late:wizReal(l)}); pe=e; pl=l;
   }
   return {wins:out};
 }
@@ -986,6 +1000,12 @@ function finishWizard(){
     plans:wiz.plans.map(p=>({label:p.label.trim(),time:parseDur(p.timeText)})).sort((a,b)=>a.time-b.time),total:parseDur(wiz.totalText),margin:+wiz.marginText.trim(),stations:b.stations};
   }
   if(wiz.editing&&wiz.prev) ['showTz','tz','tempUnit','showSeg'].forEach(k=>{ if(wiz.prev[k]!=null) chart[k]=wiz.prev[k]; });
+  // Bags, picks and locations are filed under "name@mile". If editing renamed a station or fixed its mileage, move them along.
+  if(wiz.editing){
+    const ren={}; wiz.rows.forEach((r,i)=>{ const st=b.stations[i]; if(r.origKey&&st&&r.origKey!==stKey(st)) ren[r.origKey]=stKey(st); });
+    const mv=o=>{ if(!o) return; const vals={}; Object.keys(ren).forEach(k=>{ if(k in o){ vals[ren[k]]=o[k]; delete o[k]; } }); Object.assign(o,vals); };
+    if(Object.keys(ren).length){ bp.picks=(bp.picks||[]).map(k=>ren[k]||k); mv(bp.bags); mv(bp.locs); mv(bp.locText); if(bp.step&&bp.step.startsWith('b:')&&ren[bp.step.slice(2)]) bp.step='b:'+ren[bp.step.slice(2)]; }
+  }
   if(wiz.isNew){
     const id='r_'+Date.now().toString(36);
     store.races.push({id,created:Date.now(),updated:Date.now(),mode:wiz.mode||'basic',chart:null,bags:null}); store.cur=id; bp=bpFresh();
@@ -1019,7 +1039,7 @@ function renderWizard(){
     if(adv) h+='<div class="field" style="max-width:none"><span class="flabel">How runnable are the downhills?</span><span class="help">Climbing always adds time. This sets whether descents give some back. Not sure? Mixed is a safe pick for most 100s.</span><div class="choices">'+
       radio('w-desc','runnable',w.descent,'Runnable','Smooth trail or road, you can let it fly')+radio('w-desc','mixed',w.descent,'Mixed','Some runnable, some careful')+radio('w-desc','steep',w.descent,'Steep or technical','Rocky, rooty, or steep enough to slow you down')+'</div></div>';
     h+='<p class="preview" style="margin:0">Missed one? Add it, then drag it into place with the ⠿ handle.'+(adv?' Climb and descent are for the section that ends at that aid station, in '+(eu==='ft'?'feet':'meters')+'.':'')+'</p>';
-    h+='<div class="stbox"><table class="sttable rowsort"><thead><tr><th></th><th>Name</th><th>Distance ('+u+')</th>'+(adv?'<th>Climb ('+eu+')</th><th>Descent ('+eu+')</th>':'')+(bags?'':'<th>Hard cutoff</th>')+'<th></th></tr></thead><tbody>';
+    h+='<div class="stbox"><table class="sttable rowsort'+(adv?' adv':'')+'"><thead><tr><th></th><th>Name</th><th>Distance ('+u+')</th>'+(adv?'<th>Climb ('+eu+')</th><th>Descent ('+eu+')</th>':'')+(bags?'':'<th>Hard cutoff</th>')+'<th></th></tr></thead><tbody>';
     w.rows.forEach((r,i)=>{
       const first=i===0,last=i===w.rows.length-1;
       h+='<tr><td class="idx num">'+(first||last?(first?'S':'F'):'<button type="button" class="grip" data-grip="'+i+'" aria-label="Drag to move '+esc(r.name||'this aid station')+'" title="Drag to move">⠿</button>')+'</td>'+
