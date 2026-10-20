@@ -319,6 +319,10 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .meter{height:10px;border-radius:999px;background:var(--row);overflow:hidden;max-width:420px}
 .meter i{display:block;height:100%;background:var(--teal)}
 /* visual bag + item pictures */
+.wxtop{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:var(--mist,#eef3f4);border-radius:10px;padding:12px 14px}.wxtop p{margin:0;max-width:70ch}
+.wxlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+.wxcard{border:1px solid #c4d3d5;border-left:6px solid #2e7d4f;border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:4px}.wxcard.warn{border-left-color:#e0a21b}
+.wxhead{font-size:1.02rem}.wxwhere{font-size:.9rem}.wxstat{margin:4px 0 0;font-size:.92rem}.wxcard.warn .wxstat{color:#7a5300}.wxcard.ok .wxstat{color:#1f6b40}.wxsum{margin:2px 0 0;font-size:.9rem;color:#33454b}
 .ico{display:block;width:100%;height:100%;overflow:visible}
 .ico *{fill:none;stroke:#0b2a33;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
 .ico .t{fill:var(--teal)}.ico .p{fill:var(--purple)}.ico .m{fill:var(--mint)}.ico .y{fill:#f2b632}.ico .w{fill:var(--white)}.ico .r{fill:#d6453d}.ico .k{fill:#f4b4c2}.ico .d{fill:#1d2b30}.ico .g{fill:#c4d3d5}.ico .s{fill:#f6c9a8}
@@ -1255,17 +1259,16 @@ function isoDay(ms){const dt=new Date(ms);return dt.getUTCFullYear()+'-'+pad2(dt
 const okLoc=l=>l&&isFinite(l.lat)&&isFinite(l.lon);
 function hasWx(){ return !!(bp.wx&&bp.wx.locs&&bp.wx.locs.race&&!bp.wx.err); }
 // Weather data for the spot nearest a distance along the course (aid stations with their own location, else the race location).
-function locAtDist(d){
-  if(!hasWx()) return null;
-  let best=null, bd=Infinity;
-  // Use the last location at or before this point that has weather (the drop bag you just left).
-  // Before the first one, use the first one ahead.
-  const ok=L=>L&&L.h&&Object.keys(L.h).length;
-  let first=null;
-  (chart.stations||[]).forEach(s=>{ const L=bp.wx.locs['s:'+stKey(s)]; if(!ok(L)) return; if(!first) first=L; if(s.dist<=d+1e-6){best=L;} });
-  best=best||first;
-  return best||bp.wx.locs.race;
+// Which location's weather a point on the course uses: the last spot at or before it that has weather
+// (the drop bag you just left); before the first one, the first one ahead. Returns {key,L}.
+function wxOk(L){ return !!(L&&L.h&&Object.keys(L.h).length); }
+function locSrcAt(d){
+  if(!hasWx()) return {key:null,L:null};
+  let best=null, first=null;
+  (chart.stations||[]).forEach(s=>{ const k=stKey(s), L=bp.wx.locs['s:'+k]; if(!wxOk(L)) return; if(!first) first={key:k,L}; if(s.dist<=d+1e-6) best={key:k,L}; });
+  return best||first||{key:'race',L:bp.wx.locs.race};
 }
+function locAtDist(d){ return locSrcAt(d).L; }
 // Short time zone name (EDT, CDT...) for a location on the race day. Sun times are in that spot's local time.
 function tzAbbr(tz,el){ if(!tz) return ''; try{ const [y,m,d]=(chart.startDate||'2000-01-01').split('-').map(Number), dt=new Date(Date.UTC(y,m-1,d,17)+Math.round(el||0)*60000);
   return new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'short'}).formatToParts(dt).find(p=>p.type==='timeZoneName').value; }catch(e){ return ''; } }
@@ -1504,7 +1507,7 @@ function dbSuggest(b,ctx){
 }
 
 function dbStepList(bags){
-  return [['pick','Drop bags']].concat(bags.map(b=>['b:'+b.key,b.kind==='start'?'Start':b.kind==='finish'?'Finish':b.name]),[['morning','Race morning'],['summary','Checklist']]);
+  return [['pick','Drop bags'],['weather','Weather']].concat(bags.map(b=>['b:'+b.key,b.kind==='start'?'Start':b.kind==='finish'?'Finish':b.name]),[['morning','Race morning'],['summary','Checklist']]);
 }
 function dbCurStep(bags){
   const st=bp.step||'pick', steps=dbStepList(bags);
@@ -1523,6 +1526,7 @@ function renderBags(){
   if(dbErr) h+='<p class="err" role="alert">'+esc(dbErr)+'</p>';
   if(st==='summary') maybeDonate();
   if(st==='pick') h+=dbPick(R);
+  else if(st==='weather') h+=dbWeather(R,bags);
   else if(st==='morning') h+=dbMorning();
   else if(st==='summary') h+=dbSummary(R,bags);
   else { const k=bags.findIndex(b=>'b:'+b.key===st); h+=dbBagView(R,bags,k); }
@@ -1532,6 +1536,49 @@ function renderBags(){
   return h;
 }
 
+/* Weather check: one card per bag station saying where its weather comes from, and what it looks like until the next bag. */
+function stName(k){ if(k==='race'){ const RL=raceLoc(), s=(chart.stations||[]).find(x=>{const L=(bp.locs||{})[stKey(x)];return L&&RL&&L.lat===RL.lat&&L.lon===RL.lon;}); return s?stLabel(s):'your race location'; }
+  const s=(chart.stations||[]).find(x=>stKey(x)===k); return s?stLabel(s):'another station'; }
+function stLabel(s){ const st=chart.stations; return st.indexOf(s)===0?'the start':st.indexOf(s)===st.length-1?'the finish':s.name; }
+function dbWeather(R,bags){
+  let h='<section class="dbpanel"><div><h2>Weather for each drop bag</h2><p class="preview" style="margin-top:6px;max-width:70ch">Here\'s where the weather and daylight for each stretch come from, and what to expect until your next bag. If a spot is missing or couldn\'t be found, the last location before it is used instead.</p></div>';
+  // Overall status first: nothing below means much without it.
+  let top='';
+  if(!chart.startDate) top='<b>Add your race date</b> on the Drop bags step to get the weather.';
+  else if(!raceLoc()) top='<b>No locations yet.</b> Add a town or GPS coordinates for the start and your drop bags on the Drop bags step.';
+  else if(wxBusy) top='<b>Getting the weather...</b>';
+  else if(bp.wx&&bp.wx.err) top='<b>'+esc(bp.wx.err)+'</b> Until it loads, the planner uses a sample day.';
+  else if(!hasWx()) top='<b>Weather hasn\'t loaded yet.</b>';
+  else { const ys=(bp.wx.locs.race.years||[]);
+    top=bp.wx.kind==='forecast'?'<b>Using the forecast</b>, updated '+esc(new Date(bp.wx.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))+'. Check again the day before you pack.'
+      :'<b>Using typical weather</b> for your race dates'+(ys.length?' in '+ys.join(', '):'')+'. The real forecast shows up within about two weeks of race day.'; }
+  h+='<div class="wxtop"><p>'+top+'</p><div class="row" style="display:flex;gap:8px;flex-wrap:wrap">'+(chart.startDate&&raceLoc()&&!wxBusy?'<button type="button" class="btn sm" data-act="b-wx">'+(hasWx()?'Refresh weather':'Try again')+'</button>':'')+
+     '<button type="button" class="btn sm" data-act="b-go" data-step="pick">Change locations</button></div></div>';
+  h+='<div class="wxlist">';
+  bags.forEach((b,k)=>{
+    if(b.kind==='finish') return;
+    const r=R.rows[b.i], key=b.kind==='start'?stKey(chart.stations[0]):b.key, mine=(bp.locs||{})[key], txt=(bp.locText||{})[key];
+    const title=b.kind==='start'?'Start':b.name, mile=b.kind==='start'?'':' <span class="muted num">'+dShow(r.dist).toFixed(1)+' '+uLabel()+'</span>';
+    let where, status, cls='ok';
+    where=okLoc(mine)?esc(mine.name)+(parseLatLon(mine.name)?'':' <span class="muted num">('+mine.lat.toFixed(3)+', '+mine.lon.toFixed(3)+')</span>'):txt?esc(txt)+' <span class="muted">(not found yet)</span>':'<span class="muted">No location entered</span>';
+    if(!hasWx()){ status='No weather yet, so this stretch uses a sample day.'; cls='warn'; }
+    else {
+      const src=locSrcAt(r.dist), own=src.key===key;
+      const z=src.L&&src.L.tz?' Times for sunrise and sunset are in '+esc(tzAbbr(src.L.tz,0))+'.':'';
+      if(own) status='Using weather from this location.'+z;
+      else { cls='warn'; const from=esc(stName(src.key));
+        status=(okLoc(mine)?'Unable to pull weather for this exact location, so this stretch uses the weather from '+from+'.':
+                'No location for this stop, so this stretch uses the weather from '+from+'.')+z; }
+    }
+    h+='<div class="wxcard '+cls+'"><div class="wxhead"><b>'+esc(title)+'</b>'+mile+'</div><div class="wxwhere">'+where+'</div><p class="wxstat">'+(cls==='ok'?'✓ ':'⚠ ')+status+'</p>';
+    if(hasWx()){
+      const ctx=dbCtx(R,bags,k), x=ctx.wx;
+      h+='<p class="wxsum">To '+esc(ctx.nextName)+': '+fmtT(x.lo)+' to '+fmtT(x.hi)+', rain up to '+x.rain+'%'+(x.events.length?', '+esc(x.events.map(evText).join(', ')):x.darkMin>0?', dark the whole way':', daylight the whole way')+'.</p>';
+    }
+    h+='</div>';
+  });
+  return h+'</div></section>';
+}
 function dbPick(R){
   const last=R.rows.length-1, picked=new Set(bp.picks);
   let h='<section class="dbpanel"><div><h2>Where will you have drop bags?</h2><p class="preview" style="margin-top:6px;max-width:70ch">Check every aid station where you\'ll have a drop bag. The times shown are your arrival window: your fastest goal to the cutoff.</p></div>';
