@@ -1771,8 +1771,8 @@ function dbBagView(R,bags,k){
   }
   if(ctx.needLamp){
     const ss=x.events.find(e=>e.type==='sunset');
-    alerts.push({items:['headlamp','batteries'],ico:'headlamp',todo:'Pack a headlamp.',done:'Headlamp packed.',
-      why:(ss?'Sunset is at '+clockParts(ss.sel).text+zSfx(ss.sel)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark, so bring headlamp batteries as well.'});
+    alerts.push({items:['headlamp'],ico:'headlamp',todo:'Pack a headlamp.',done:'Headlamp packed.',
+      why:(ss?'Sunset is at '+clockParts(ss.sel).text+zSfx(ss.sel)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark.'});
   }
   // Warm gear and layers: if an earlier bag (or the start) already has it, ask whether she still has it instead of repeating the warning.
   const SAT={lightlayer:['lightlayer','extralayer','longsleeve','jacket','windshell','rainjacket'],extralayer:['extralayer','jacket'],beanie:['beanie'],gloves:['gloves'],rainjacket:['rainjacket']};
@@ -1815,10 +1815,14 @@ function dbBagView(R,bags,k){
        (!packed&&missing.length&&missing.length<a.items.length?' Still missing: '+esc(names.join(', '))+'.':'')+(a.btn?' '+a.btn:'')+'</div></div>';
   });
   if(ctx.maybeLamp){
-    const m=ctx.maybeLamp, packed=have.has('headlamp'), batt=have.has('batteries');
-    h+='<div class="alert '+(packed&&batt?'ok':'info')+'" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>'+(packed?(batt?'Headlamp and batteries packed, just in case.':'Headlamp packed. Does it need batteries?'):'Consider packing a headlamp.')+'</b> '+
-       'At '+esc(ctx.sel.label)+' pace you\'ll reach '+esc(ctx.nextBag)+' before dark. But if you slow to '+esc(orList(m.labels))+' pace, you\'d be in the dark for up to '+esc(fmtHrs(m.dark))+' of this stretch.'+(packed?(batt?'':' Not every headlamp takes them, but if yours does, toss spares in this bag.'):' A headlamp in this bag covers you if the day goes sideways.')+'</div></div>';
+    const m=ctx.maybeLamp, packed=have.has('headlamp');
+    h+='<div class="alert '+(packed?'ok':'info')+'" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>'+(packed?'Headlamp packed, just in case.':'Consider packing a headlamp.')+'</b> '+
+       'At '+esc(ctx.sel.label)+' pace you\'ll reach '+esc(ctx.nextBag)+' before dark. But if you slow to '+esc(orList(m.labels))+' pace, you\'d be in the dark for up to '+esc(fmtHrs(m.dark))+' of this stretch.'+(packed?'':' A headlamp in this bag covers you if the day goes sideways.')+'</div></div>';
   }
+  // Any time a headlamp goes in the bag, ask about batteries (not every headlamp takes them).
+  if(have.has('headlamp')&&!have.has('batteries')&&!bag.noBatt)
+    h+='<div class="alert info" role="status"><span class="aico">'+icon('batteries')+'</span><div><b>Does your headlamp need batteries?</b> Not every headlamp takes them, but if yours does, pack spares in this bag. '+
+       '<button type="button" class="btn sm" data-act="b-lib" data-id="batteries">Add batteries</button> <button type="button" class="btn sm" data-act="b-nobatt">No batteries needed</button></div></div>';
   if(!ctx.needLamp&&ctx.hasLamp&&x.darkMin>0){
     h+='<div class="alert info" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>Headlamp check.</b> '+'At '+esc(ctx.sel.label)+' pace you\'ll arrive after dark, so your headlamp should already be on.'+' There\'s up to '+esc(fmtHrs(x.darkMin))+' more of darkness before '+esc(ctx.nextBag)+'. '+
        'Will your batteries last that long? If not, pack spares in this bag. Consider packing a spare light if you don\'t already have one.</div></div>';
@@ -2044,12 +2048,13 @@ function dbAct(a,btn){
   if(bag){
     const k=bags.findIndex(b=>b.key===key), sugg=dbSuggest(bags[k],dbCtx(R,bags,k));
     const have=new Set(bag.items.map(it=>it.id));
-    if(a==='b-add'){const s=sugg.find(x=>x.id===btn.dataset.id); if(s&&!have.has(s.id)){bag.items.push({id:s.id,name:s.name,qty:s.qty});dbNew.add(s.id)}
-      if(s&&s.id==='headlamp'&&!bag.items.some(it=>it.id==='batteries')){const bs=sugg.find(x=>x.id==='batteries');bag.items.push({id:'batteries',name:DB_BYID.batteries.name,qty:bs?bs.qty:''});dbNew.add('batteries')}}
+    if(a==='b-add'){const s=sugg.find(x=>x.id===btn.dataset.id); if(s&&!have.has(s.id)){bag.items.push({id:s.id,name:s.name,qty:s.qty});dbNew.add(s.id)}}
     if(a==='b-addall'){sugg.forEach(s=>{if(!have.has(s.id)&&!bag.dismissed.includes(s.id)){bag.items.push({id:s.id,name:s.name,qty:s.qty});dbNew.add(s.id)}});}
     if(a==='b-dismiss'){if(!bag.dismissed.includes(btn.dataset.id)) bag.dismissed.push(btn.dataset.id);}
     if(a==='b-restore'){bag.dismissed=[];}
     if(a==='b-col'){bag.col=btn.dataset.col;}
+    if(a==='b-nobatt'){bag.noBatt=true;}
+    if((a==='b-add'||a==='b-lib')&&btn.dataset.id==='headlamp'&&!have.has('headlamp')) delete bag.noBatt;   // a newly packed headlamp asks about batteries again
     if(a==='b-rm'){bag.items.splice(+btn.dataset.j,1);}
     if(a==='b-cal'){const it=bag.items[+btn.dataset.j]; if(it) it.qty=calQty(calNum(it.qty)+(+btn.dataset.d));}
     if(a==='b-calrec'){const it=bag.items[+btn.dataset.j]; if(it) it.qty=calQty(+btn.dataset.v);}
