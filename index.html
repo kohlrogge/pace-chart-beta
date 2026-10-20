@@ -322,6 +322,8 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .meter{height:10px;border-radius:999px;background:var(--row);overflow:hidden;max-width:420px}
 .meter i{display:block;height:100%;background:var(--teal)}
 /* visual bag + item pictures */
+.when{display:flex;gap:6px;align-items:center}.when .dayin{flex:0 0 auto;width:auto;max-width:9.5rem;padding-right:24px}
+.sttable.clockcut{min-width:820px}.sttable.adv.clockcut{min-width:1080px}.sttable.wintable{min-width:760px}
 .ampm{display:flex;gap:6px;align-items:center}.ampm .in{min-width:0}.ampm input{flex:1 1 4.5rem;max-width:7rem}.ampm select{flex:0 0 auto;width:auto;padding-right:24px}
 .tzsel{width:auto;min-width:11rem;padding:6px 10px;font-size:.9rem}
 .locwarn{grid-column:1/-1;color:#7a5300;background:#fff4d6;border-left:4px solid #e0a21b;padding:6px 8px;border-radius:6px}
@@ -885,79 +887,112 @@ function newDraft(from){
     labels:{cut:'Cutoff'},plans:[{label:'Goal',time:null},{label:'B Goal',time:null}],total:null,margin:15,
     stations:[{name:'Start',dist:0,cutoff:null},{name:'',dist:null,cutoff:null},{name:'Finish',dist:null,cutoff:null}]};
   const eu=c.entryUnit||c.unit||'mi';
-  const d={step:1,name:c.name,entryUnit:eu,display:c.display,detail:c.detail||'buffer',startDate:c.startDate||'',startText:fmtClock12(c.startTime),
+  const d={step:1,name:c.name,entryUnit:eu,display:c.display,detail:c.detail||'buffer',startDate:c.startDate||'',startText:from?fmtClock12(c.startTime):'',
     cutoffFormat:c.cutoffFormat||'elapsed',labels:clone(c.labels),marginText:String(marginOf(c)),
-    plans:c.plans.map(p=>({label:p.label,timeText:p.time!=null?fmtDur(p.time):''})),totalText:c.total!=null?fmtDur(c.total):'',
+    plans:c.plans.map(p=>({label:p.label,timeText:p.time!=null?fmtDur(p.time):''})),totalText:c.total!=null&&!c.manual?fmtDur(c.total):'',
     rows:[]};
   d.adv=!!c.adv; d.descent=c.descent||'mixed'; d.raceTz=c.raceTz||'';
-  if(c.manual){ d.mode='bags'; d.wins=c.stations.map((s,i)=>{const w=c.windows&&c.windows[i]; return w?{e:draftClock(c,w.early),l:draftClock(c,w.late)}:{e:'',l:''}}); }
-  d.rows=c.stations.map(s=>({name:s.name,distText:s.dist==null?'':String(+(eu==='km'?s.dist*KM:s.dist).toFixed(2)),
-    cutText:s.cutoff==null?'':(d.cutoffFormat==='clock'?draftClock(c,s.cutoff):fmtDur(s.cutoff)),origKey:stKey(s),
-    gainText:s.gain==null?'':String(Math.round(eu==='km'?s.gain/FT_PER_M:s.gain)),lossText:s.loss==null?'':String(Math.round(eu==='km'?s.loss/FT_PER_M:s.loss))}));
+  const tz=c.raceTz||DEV_TZ, dc=el=>c.startDate?dayClockOf(c.startDate,c.startTime,tz,el):{day:'',text:fmtClock12(c.startTime+el)};
+  if(c.manual){ d.mode='bags'; d.wins=c.stations.map((s,i)=>{const w=c.windows&&c.windows[i]; if(!w) return {e:'',ed:'',l:'',ld:''}; const a=dc(w.early), b=dc(w.late); return {e:a.text,ed:a.day,l:b.text,ld:b.day};}); }
+  d.rows=c.stations.map(s=>{ const r={name:s.name,distText:s.dist==null?'':String(+(eu==='km'?s.dist*KM:s.dist).toFixed(2)),cutText:'',cutDay:'',origKey:stKey(s),
+      gainText:s.gain==null?'':String(Math.round(eu==='km'?s.gain/FT_PER_M:s.gain)),lossText:s.loss==null?'':String(Math.round(eu==='km'?s.loss/FT_PER_M:s.loss))};
+    if(s.cutoff!=null){ if(d.cutoffFormat==='clock'){ const x=dc(s.cutoff); r.cutText=x.text; r.cutDay=x.day; } else r.cutText=fmtDur(s.cutoff); }
+    return r; });
   return d;
 }
+
+/* ---------- times of day in setup ----------
+   Every clock time is a day of the race + a 12-hour time + AM/PM, read in the race's start time zone. Using the real
+   date means a race over a daylight saving weekend gets the right number of hours. */
+function dayClockOf(date,startMin_,tz,el){
+  const [y,m,d]=date.split('-').map(Number), p=localParts(zonedUTC(y,m,d,startMin_,tz)+Math.round(el)*60000,tz);
+  return {day:Math.round((Date.UTC(p.y,p.m-1,p.d)-Date.UTC(y,m-1,d))/864e5),text:fmtClock12(p.min)};
+}
+function wizElapsed(day,text){   // race-elapsed minutes for a day index + "h:mm AM", or NaN
+  const t=clock12(text), sm=startMin(); if(t==null||isNaN(sm)||!wiz.startDate||day===''||day==null) return NaN;
+  const tz=wiz.raceTz||DEV_TZ, [y,m,d]=wiz.startDate.split('-').map(Number);
+  return Math.round((zonedUTC(y,m,d+(+day),t,tz)-zonedUTC(y,m,d,sm,tz))/60000);
+}
+function wizDays(){   // the days a runner could be on course, from the race date
+  if(!wiz.startDate) return [];
+  const t=parseDur(wiz.totalText), sm=startMin(), n=wiz.mode==='bags'||t==null||isNaN(t)||isNaN(sm)?4:Math.max(2,Math.ceil((sm+t)/1440)+1);
+  const [y,m,d]=wiz.startDate.split('-').map(Number);
+  return Array.from({length:n},(_,i)=>({i,label:new Date(Date.UTC(y,m-1,d+i,12)).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',timeZone:'UTC'})}));
+}
+function dayField(id,day,label){
+  const ds=wizDays();
+  return '<select class="in dayin" id="'+id+'" aria-label="'+esc(label||'Day')+'"><option value="">Day</option>'+
+    ds.map(x=>'<option value="'+x.i+'"'+(day!==''&&day!=null&&+day===x.i?' selected':'')+'>'+esc(x.label)+'</option>').join('')+'</select>';
+}
+function whenField(id,day,text,ph,label){ return '<span class="when">'+dayField(id+'d',day,label?label+', day':'Day')+ampmField(id,text,ph,label)+'</span>'; }
+function readDay(id){ const e=document.getElementById(id+'d'); return e?e.value:null; }
+// A finish cutoff typed as race time, or a race total, from an imported or pasted last row: keep it if it reads as hours:minutes.
+function takeFinishCut(t){ t=String(t||'').trim(); if(!t||/[ap]\.?m/i.test(t)) return; const v=parseDur(t); if(v!=null&&!isNaN(v)&&v>0&&!wiz.totalText.trim()) wiz.totalText=fmtDur(v); }
 
 function readWizInputs(){
   const q=id=>document.getElementById(id);
   if(!wiz) return;
   if(wiz.step===1){
+    const tzq=q('w-tz'); if(tzq) wiz.raceTz=tzq.value;
+    wiz.name=q('w-name').value; wiz.startDate=q('w-date').value; wiz.startText=readAmpm('w-start')||'';
+    const tt=q('w-total'); if(tt) wiz.totalText=tt.value;
+    if(wiz.mode==='bags') wiz.display='clock';
+    const d=document.querySelector('input[name=w-disp]:checked'); if(d) wiz.display=d.value;
+  }
+  if(wiz.step===2){
     const u=document.querySelector('input[name=w-unit]:checked');if(u)wiz.entryUnit=u.value;
     const f=document.querySelector('input[name=w-cf]:checked'); if(f) wiz.cutoffFormat=f.value;
-    wiz.rows.forEach((r,i)=>{const n=q('w-n'+i),d=q('w-d'+i),c=q('w-c'+i),cv=q('w-c'+i+'ap')?readAmpm('w-c'+i):null,up=q('w-up'+i),dn=q('w-dn'+i);if(n)r.name=n.value;if(d)r.distText=d.value;if(c)r.cutText=cv!=null?cv:c.value;if(up)r.gainText=up.value;if(dn)r.lossText=dn.value});
+    const last=wiz.rows.length-1;
+    wiz.rows.forEach((r,i)=>{const n=q('w-n'+i),d=q('w-d'+i),up=q('w-up'+i),dn=q('w-dn'+i);if(n)r.name=n.value;if(d)r.distText=d.value;if(up)r.gainText=up.value;if(dn)r.lossText=dn.value;
+      if(i===last||!q('w-c'+i)) return;
+      if(q('w-c'+i+'ap')){ r.cutText=readAmpm('w-c'+i); const dy=readDay('w-c'+i); if(dy!=null) r.cutDay=dy; } else r.cutText=q('w-c'+i).value; });
+    // The finish row's cutoff is the overall cutoff: an edit there updates it.
+    if(q('w-c'+last)){
+      if(q('w-c'+last+'ap')){ const el=wizElapsed(readDay('w-c'+last),readAmpm('w-c'+last)); if(!isNaN(el)&&el>0) wiz.totalText=fmtDur(el); }
+      else wiz.totalText=q('w-c'+last).value;
+    }
     const ds=document.querySelector('input[name=w-desc]:checked'); if(ds) wiz.descent=ds.value;
   }
-  if(wiz.step===2){const tzq=q('w-tz'); if(tzq) wiz.raceTz=tzq.value; wiz.name=q('w-name').value;wiz.startDate=q('w-date').value;wiz.startText=readAmpm('w-start')||'';void q('w-start').value;if(wiz.mode==='bags')wiz.display='clock';const d=document.querySelector('input[name=w-disp]:checked');if(d)wiz.display=d.value}
-  if(wiz.step===3&&wiz.mode==='bags'){ wiz.wins.forEach((w,i)=>{const e=readAmpm('w-e'+i),l=readAmpm('w-l'+i);if(e!=null)w.e=e;if(l!=null)w.l=l}); return; }
+  if(wiz.step===3&&wiz.mode==='bags'){ wiz.wins.forEach((w,i)=>{const e=readAmpm('w-e'+i),l=readAmpm('w-l'+i),ed=readDay('w-e'+i),ld=readDay('w-l'+i);if(e!=null)w.e=e;if(l!=null)w.l=l;if(ed!=null)w.ed=ed;if(ld!=null)w.ld=ld}); return; }
   if(wiz.step===3){
     wiz.plans.forEach((p,i)=>{const l=q('w-pl'+i),t=q('w-pt'+i);if(l)p.label=l.value;if(t)p.timeText=t.value});
     wiz.labels.cut=q('w-lc').value||'Cutoff';
-    wiz.totalText=q('w-total').value;wiz.marginText=q('w-margin').value;
+    wiz.marginText=q('w-margin').value;
   }
 }
 
 // Elevation cells: blank is unknown (counted as 0); accepts 1,200 or +1200 or 1200 ft. Returns false if unreadable.
 function parseElev(t){ t=String(t||'').replace(/[,+\s]|ft|feet|m\b|-/gi,''); if(!t) return null; const v=parseFloat(t); return isNaN(v)||v<0?false:v; }
-/* Clock times in setup are read in the race's time zone. naive = minutes after the start counting every day as 24 hours;
-   on a daylight saving weekend the real race time differs by an hour, so convert through the actual date. */
-function wizReal(naive){
-  if(!wiz.startDate) return naive;
-  const tz=wiz.raceTz||DEV_TZ, [y,m,d]=wiz.startDate.split('-').map(Number), sm=startMin(), tot=sm+naive, day=Math.floor(tot/1440);
-  return Math.round((zonedUTC(y,m,d+day,tot-day*1440,tz)-zonedUTC(y,m,d,sm,tz))/60000);
-}
-function draftClock(c,el){
-  if(!c.startDate) return fmtClock12(c.startTime+el);
-  const tz=c.raceTz||DEV_TZ, [y,m,d]=c.startDate.split('-').map(Number);
-  return fmtClock12(localParts(zonedUTC(y,m,d,c.startTime,tz)+Math.round(el)*60000,tz).min);
-}
 function startMin(){const v=clock12(wiz.startText);return v==null?NaN:v}
 
-function buildStations(syntaxOnly){
-  // returns {stations} or {err}. syntaxOnly: check clock cutoffs' format without converting (start time not known yet)
-  const rows=wiz.rows, out=[]; let prevD=-1, prevCut=0, prevNaive=0;
-  const sm=startMin();
+function buildStations(){
+  // returns {stations, lastCut} or {err}
+  const rows=wiz.rows, out=[], total=parseDur(wiz.totalText), bags=wiz.mode==='bags'; let prevD=-1, prevCut=0, prevName='the start';
   for(let i=0;i<rows.length;i++){
-    const r=rows[i], name=r.name.trim()||(i===0?'Start':i===rows.length-1?'Finish':'');
+    const r=rows[i], last=i===rows.length-1, name=r.name.trim()||(i===0?'Start':last?'Finish':'');
     if(!name) return {err:'Aid station '+i+' needs a name.'};
     let d = i===0?0:parseFloat(r.distText);
     if(isNaN(d)) return {err:name+' needs a distance.'};
     if(d<=prevD) return {err:name+' must be farther than the station before it.'};
     prevD=d;
     let cut=null;
-    if(i>0 && i<rows.length-1 && r.cutText.trim()){
+    if(!bags&&i>0&&!last&&(r.cutText.trim()||(wiz.cutoffFormat==='clock'&&r.cutDay!==''&&r.cutDay!=null))){
       if(wiz.cutoffFormat==='clock'){
-        const ce=clockErr(r.cutText,'The cutoff for '+name); if(ce) return {err:ce}; const c=clock12(r.cutText);
-        if(syntaxOnly){cut=1; out.push({name,dist:d,cutoff:cut}); continue}
-        if(isNaN(sm)) return {err:'Add a valid start time in step 2 so time-of-day cutoffs can be converted.'};
-        let e=((c-sm)%1440+1440)%1440; while(e<=prevNaive) e+=1440; prevNaive=e; cut=wizReal(e);
+        if(!r.cutText.trim()) return {err:'Add the time for the cutoff at '+name+', or set its day back to Day.'};
+        const ce=clockErr(r.cutText,'The cutoff for '+name); if(ce) return {err:ce};
+        if(r.cutDay===''||r.cutDay==null) return {err:'Pick the day for the cutoff at '+name+'.'};
+        cut=wizElapsed(r.cutDay,r.cutText);
+        if(!(cut>0)) return {err:'The cutoff for '+name+' is before the race starts. Check its day and time.'};
       } else {
         const c=parseDur(r.cutText); if(c==null||isNaN(c)) return {err:'The cutoff for '+name+' should be hours:minutes of race time, like 14:25.'};
-        if(c<=prevCut) return {err:'The cutoff for '+name+' has to be later than the cutoff before it.'};
         cut=c;
       }
-      prevCut=cut;
+      if(cut<=prevCut) return {err:'The cutoff for '+name+' has to be later than the cutoff at '+prevName+'.'};
+      if(total!=null&&!isNaN(total)&&cut>=total) return {err:'The cutoff for '+name+' has to be earlier than the overall cutoff ('+fmtDur(total)+').'};
+      prevCut=cut; prevName=name;
     }
     const st={name,dist:wiz.entryUnit==='km'?d/KM:d,cutoff:cut};
-    if(wiz.adv&&wiz.mode!=='bags'&&i>0){
+    if(wiz.adv&&!bags&&i>0){
       for(const [f,t,lab] of [['gain',r.gainText,'climb'],['loss',r.lossText,'descent']]){
         const v=parseElev(t); if(v===false) return {err:'The '+lab+' for '+name+' should be a number, like 1200.'};
         if(v!=null) st[f]=wiz.entryUnit==='km'?v*FT_PER_M:v;
@@ -966,17 +1001,27 @@ function buildStations(syntaxOnly){
     out.push(st);
   }
   if(out.length<2) return {err:'Add at least a start and a finish.'};
-  if(wiz.adv&&wiz.mode!=='bags'&&!out.some(s=>s.gain||s.loss)) return {err:'Add the climb and descent for your sections, or switch pacing back to Even pace.'};
+  if(wiz.adv&&!bags&&!out.some(s=>s.gain||s.loss)) return {err:'Add the climb and descent for your sections, or switch pacing back to Even pace.'};
   return {stations:out,lastCut:prevCut};
 }
 
 function validateStep(){
   readWizInputs();
-  if(wiz.step===1){const b=buildStations(true); if(b.err) return b.err}
-  if(wiz.step===2){
+  if(wiz.step===1){
     if(!wiz.name.trim()) return 'Give the race a name.';
+    if(!wiz.startDate) return 'Pick the race date.';
     const s=startMin(); if(isNaN(s)) return clockErr(wiz.startText,'The start time')||'Enter a start time like 6:00 and pick AM or PM.';
-    if(wiz.mode==='bags'&&!wiz.startDate) return 'Add the race date. The drop bag planner needs it for the weather and daylight.';
+    if(wiz.mode!=='bags'){ const t=parseDur(wiz.totalText); if(t==null||isNaN(t)||t<=0) return 'Enter the overall cutoff as hours:minutes of race time, like 34:00.'; }
+  }
+  if(wiz.step===2){
+    if(wiz.mode!=='bags'&&wiz.cutoffFormat==='clock'){
+      const q=id=>document.getElementById(id), last=wiz.rows.length-1;
+      if(q('w-c'+last+'ap')){ const t=readAmpm('w-c'+last), dy=readDay('w-c'+last);
+        const ce=clockErr(t,'The finish cutoff'); if(ce) return ce;
+        if(dy==='') return 'Pick the day for the finish cutoff.';
+        if(!(wizElapsed(dy,t)>0)) return 'The finish cutoff is before the race starts. Check its day and time.'; }
+    }
+    if(wiz.mode!=='bags'){ const t=parseDur(wiz.totalText); if(t==null||isNaN(t)||t<=0) return 'Enter the finish cutoff as hours:minutes of race time, like 34:00.'; }
     const b=buildStations(); if(b.err) return b.err;
   }
   if(wiz.step===3&&wiz.mode==='bags'){ const w=buildWins(); return w.err||''; }
@@ -994,10 +1039,8 @@ function validateStep(){
       seenT.set(tm,lab); plans.push({label:lab,time:tm});
     }
     const t=parseDur(wiz.totalText);
-    if(t==null||isNaN(t)) return 'Enter the overall cutoff as hours:minutes, like 34:00.';
     for(const p of plans) if(p.time>=t) return 'The '+p.label+' time ('+fmtDur(p.time)+') has to be faster than the overall cutoff ('+fmtDur(t)+').';
     const b=buildStations(); if(b.err) return b.err;
-    if(b.lastCut>=t) return 'The overall cutoff has to be later than the last aid station cutoff ('+fmtDur(b.lastCut)+').';
     const mt=wiz.marginText.trim();
     if(!/^\d+$/.test(mt)) return 'Enter the cutoff margin as whole minutes from 0 to 120.';
     const mi=marginIssue(+mt,b.stations,plans,t); if(mi) return mi.replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/&lt;/g,'<').replace(/&gt;/g,'>');
@@ -1006,17 +1049,19 @@ function validateStep(){
 }
 
 function buildWins(){
-  const sm=startMin(), out=[null]; let pe=0, pl=0;
+  const out=[null]; let pe=0, pl=0;
   for(let i=1;i<wiz.rows.length;i++){
-    const w=wiz.wins[i]||{e:'',l:''}, name=(wiz.rows[i].name.trim()||(i===wiz.rows.length-1?'Finish':'Aid station '+i)), last=i===wiz.rows.length-1;
-    const et=w.e.trim(), lt=w.l.trim();
+    const w=wiz.wins[i]||{e:'',ed:'',l:'',ld:''}, name=(wiz.rows[i].name.trim()||(i===wiz.rows.length-1?'Finish':'Aid station '+i)), last=i===wiz.rows.length-1;
+    const et=(w.e||'').trim(), lt=(w.l||'').trim();
     if(!et&&!lt){ if(last) return {err:'Enter your earliest and latest finish times.'}; out.push(null); continue; }
     if(!et||!lt) return {err:'Enter both an earliest and a latest time for '+name+', or leave both blank.'};
     const ee=clockErr(et,'The earliest time for '+name)||clockErr(lt,'The latest time for '+name); if(ee) return {err:ee};
-    const ec=clock12(et), lc=clock12(lt);
-    const roll=(tod,prev)=>{let x=((tod-sm)%1440+1440)%1440; while(x<prev) x+=1440; return x;};
-    const e=roll(ec,pe), l=roll(lc,Math.max(pl,e));
-    out.push({early:wizReal(e),late:wizReal(l)}); pe=e; pl=l;
+    if(w.ed===''||w.ed==null||w.ld===''||w.ld==null) return {err:'Pick the day for both times at '+name+'.'};
+    const e=wizElapsed(w.ed,et), l=wizElapsed(w.ld,lt);
+    if(!(e>0)) return {err:'The earliest time at '+name+' is before the race starts. Check its day and time.'};
+    if(l<e) return {err:'The latest time at '+name+' is before its earliest time.'};
+    if(e<pe||l<pl) return {err:'The times at '+name+' are earlier than at the aid station before it. Check the days and times.'};
+    out.push({early:e,late:l}); pe=e; pl=l;
   }
   return {wins:out};
 }
@@ -1054,16 +1099,28 @@ function radio(name,val,cur,title,help){
 }
 
 function renderWizard(){
-  const w=wiz, bags=w.mode==='bags', steps=['Aid stations','Race details',bags?'Arrival times':'Target times'];
+  const w=wiz, bags=w.mode==='bags', steps=['Race details','Aid stations',bags?'Arrival times':'Target times'];
   let h='<header class="top bleed"><div class="bleed-inner"><div class="brand">'+LOGO+'<div class="title"><h1>'+(w.editing?(bags?'Edit arrival times':'Edit chart'):(bags?'New race':'New pace chart'))+'</h1></div></div>'+
         '<div class="actions">'+(chart||w.isNew?'<button class="btn ghost" data-act="cancel" type="button">Cancel</button>':'')+'</div></div></header><div class="greyband bleed"></div>';
   h+='<div class="wiz" id="wizform"><ol class="steps">'+steps.map((s,i)=>'<li class="'+(w.step===i+1?'on':w.step>i+1?'done':'')+'"><b>'+(i+1)+'</b>'+s+'</li>').join('')+'</ol>';
   if(w.step===1){
-    const u=w.entryUnit==='km'?'km':'mi';
-    h+='<div><h2>Enter your aid stations</h2><p class="preview" style="margin-top:6px;max-width:70ch">List every aid station in order with its distance from the start. Fill in a cutoff only where the race posts one; leave it blank and the chart estimates it from the overall cutoff. The finish cutoff is the overall cutoff, which you enter in step 3.</p></div>';
+    h+='<div><h2>Race details</h2></div>';
+    h+='<div class="field"><label for="w-name">Race name</label><input class="in" id="w-name" value="'+esc(w.name)+'" placeholder="e.g. Big Fork 100" autocomplete="off"></div>';
+    h+='<div class="grid2">'+
+       '<div class="field"><label for="w-date">Race date</label><input class="in" type="date" id="w-date" value="'+esc(w.startDate)+'"><span class="help">Used for the weather, daylight, and the days of the race.</span></div>'+
+       '<div class="field"><label for="w-start">Start time</label>'+ampmField('w-start',w.startText,'6:00')+'</div>'+
+       '<div class="field"><label for="w-tz">Start time zone</label>'+tzSelect('id="w-tz"',w.raceTz||(w.editing?raceTzName():DEV_TZ),false)+'<span class="help">The time zone the race starts in. The start time and posted cutoffs are read in this zone.</span></div>'+
+       (bags?'':'<div class="field"><label for="w-total">Overall cutoff (race time)</label><input class="in num" id="w-total" value="'+esc(w.totalText)+'" placeholder="34:00" inputmode="numeric"><span class="help">Hours:minutes from the start, like 34:00 or 30:00. This becomes the finish cutoff.</span></div>')+
+       '</div>';
+    if(!bags) h+='<div class="field" style="max-width:none"><span class="flabel">How should the chart show times?</span><span class="help">You can switch this later too.</span><div class="choices">'+
+       radio('w-disp','elapsed',w.display,'Race time','Hours since the start, e.g. 14:25')+radio('w-disp','clock',w.display,'Time of day','Clock time, e.g. Sat 8:25 PM')+'</div></div>';
+  }
+  if(w.step===2){
+    const u=w.entryUnit==='km'?'km':'mi', clockCut=!bags&&w.cutoffFormat==='clock';
+    h+='<div><h2>Enter your aid stations</h2><p class="preview" style="margin-top:6px;max-width:70ch">List every aid station in order with its distance from the start. Fill in a cutoff only where the race posts one; leave it blank and the chart estimates it from the overall cutoff.'+(bags?'':' The finish cutoff is your overall cutoff from step 1, and changing it here updates it.')+'</p></div>';
     h+='<div class="grid2" style="max-width:none">'+
        '<div class="field" style="max-width:none"><span class="flabel">Distances are in</span><span class="help">You can switch the chart between miles and kilometers later.</span><div class="choices">'+radio('w-unit','mi',w.entryUnit,'Miles','')+radio('w-unit','km',w.entryUnit,'Kilometers','')+'</div></div>'+
-       (bags?'':'<div class="field" style="max-width:none"><span class="flabel">The race posts cutoffs as</span><span class="help">Clock times are converted using the start time in step 2.</span><div class="choices">'+radio('w-cf','elapsed',w.cutoffFormat,'Race time','e.g. 14:25')+radio('w-cf','clock',w.cutoffFormat,'Time of day','e.g. 8:25 PM')+'</div></div>')+
+       (bags?'':'<div class="field" style="max-width:none"><span class="flabel">The race posts cutoffs as</span><span class="help">For time of day, pick the day and AM or PM for each cutoff.</span><div class="choices">'+radio('w-cf','elapsed',w.cutoffFormat,'Race time','e.g. 14:25')+radio('w-cf','clock',w.cutoffFormat,'Time of day','e.g. Sat 8:25 PM')+'</div></div>')+
        '</div>';
     const adv=!bags&&w.adv, eu=w.entryUnit==='km'?'m':'ft';
     if(!bags) h+='<div class="field" style="max-width:none"><span class="flabel">Pacing</span><span class="help">Adjusting for climbs and descents gives climbing sections more time and runnable downhills less. You\'ll add the climb and descent for each section.</span>'+
@@ -1071,36 +1128,36 @@ function renderWizard(){
     if(adv) h+='<div class="field" style="max-width:none"><span class="flabel">How runnable are the downhills?</span><span class="help">Climbing always adds time. This sets whether descents give some back. Not sure? Mixed is a safe pick for most 100s.</span><div class="choices">'+
       radio('w-desc','runnable',w.descent,'Runnable','Smooth trail or road, you can let it fly')+radio('w-desc','mixed',w.descent,'Mixed','Some runnable, some careful')+radio('w-desc','steep',w.descent,'Steep or technical','Rocky, rooty, or steep enough to slow you down')+'</div></div>';
     h+='<p class="preview" style="margin:0">Missed one? Add it, then drag it into place with the ⠿ handle.'+(adv?' Climb and descent are for the section that ends at that aid station, in '+(eu==='ft'?'feet':'meters')+'.':'')+'</p>';
-    h+='<div class="stbox"><table class="sttable rowsort'+(adv?' adv':'')+'"><thead><tr><th></th><th>Name</th><th>Distance ('+u+')</th>'+(adv?'<th>Climb ('+eu+')</th><th>Descent ('+eu+')</th>':'')+(bags?'':'<th>Hard cutoff</th>')+'<th></th></tr></thead><tbody>';
+    const tot=parseDur(w.totalText), fin=clockCut&&tot!=null&&!isNaN(tot)&&w.startDate&&!isNaN(startMin())?dayClockOf(w.startDate,startMin(),w.raceTz||DEV_TZ,tot):{day:'',text:''};
+    h+='<div class="stbox"><table class="sttable rowsort'+(adv?' adv':'')+(clockCut?' clockcut':'')+'"><thead><tr><th></th><th>Name</th><th>Distance ('+u+')</th>'+(adv?'<th>Climb ('+eu+')</th><th>Descent ('+eu+')</th>':'')+(bags?'':'<th>Hard cutoff</th>')+'<th></th></tr></thead><tbody>';
     w.rows.forEach((r,i)=>{
-      const first=i===0,last=i===w.rows.length-1;
+      const first=i===0,last=i===w.rows.length-1, nm=r.name||(last?'Finish':'this aid station');
+      let cutCell='';
+      if(!bags){
+        if(first) cutCell='<span class="note">None</span>';
+        else if(last) cutCell=clockCut?whenField('w-c'+i,fin.day,fin.text,'Required','Finish cutoff'):'<input class="in num" id="w-c'+i+'" value="'+esc(w.totalText)+'" placeholder="34:00" aria-label="Finish cutoff">';
+        else cutCell=clockCut?whenField('w-c'+i,r.cutDay,r.cutText,'Optional','Cutoff for '+nm):'<input class="in num" id="w-c'+i+'" value="'+esc(r.cutText)+'" placeholder="Optional">';
+        cutCell='<td>'+cutCell+'</td>';
+      }
       h+='<tr><td class="idx num">'+(first||last?(first?'S':'F'):'<button type="button" class="grip" data-grip="'+i+'" aria-label="Drag to move '+esc(r.name||'this aid station')+'" title="Drag to move">⠿</button>')+'</td>'+
          '<td><input class="in" id="w-n'+i+'" value="'+esc(r.name)+'" placeholder="'+(first?'Start':last?'Finish':'Aid station name')+'"></td>'+
          '<td><input class="in num" id="w-d'+i+'" inputmode="decimal" value="'+(first?'0':esc(r.distText))+'"'+(first?' readonly':'')+' placeholder="0.0"></td>'+
          (adv?(first?'<td></td><td></td>':'<td><input class="in num" id="w-up'+i+'" inputmode="numeric" value="'+esc(r.gainText||'')+'" placeholder="0" aria-label="Climb into '+esc(r.name||'this aid station')+'"></td><td><input class="in num" id="w-dn'+i+'" inputmode="numeric" value="'+esc(r.lossText||'')+'" placeholder="0" aria-label="Descent into '+esc(r.name||'this aid station')+'"></td>'):'')+
-         (bags?'':'<td>'+(first||last?'<span class="note">'+(first?'None':'Set in step 3')+'</span>':(w.cutoffFormat==='clock'?ampmField('w-c'+i,r.cutText,'Optional','Cutoff for '+(r.name||'this aid station')):'<input class="in num" id="w-c'+i+'" value="'+esc(r.cutText)+'" placeholder="Optional">'))+'</td>')+
+         cutCell+
          '<td class="rowtools">'+(first||last?'':'<button type="button" class="mv" data-act="rowup" data-i="'+i+'" aria-label="Move '+esc(r.name||'row')+' up"'+(i===1?' disabled':'')+'>↑</button><button type="button" class="mv" data-act="rowdown" data-i="'+i+'" aria-label="Move '+esc(r.name||'row')+' down"'+(i===w.rows.length-2?' disabled':'')+'>↓</button><button type="button" class="rm" data-act="rmrow" data-i="'+i+'" aria-label="Remove '+esc(r.name||'row')+'">×</button>')+'</td></tr>';
     });
     h+='</tbody></table></div><div><button type="button" class="btn" data-act="addrow">Add aid station</button></div>';
-    h+='<details class="paste"><summary>Paste rows from a spreadsheet</summary><p class="preview">One station per line: name, distance, cutoff (optional)'+(adv?', climb, descent':'')+', separated by tabs or commas. The first line is the start and the last line is the finish. This replaces the rows above.</p><textarea id="w-paste" class="in" placeholder="Group Camp	0&#10;Pickett	6.8&#10;Charit	19.2	6:00"></textarea><div style="margin-top:8px"><button type="button" class="btn" data-act="paste">Use these rows</button></div></details>';
+    h+='<details class="paste"><summary>Paste rows from a spreadsheet</summary><p class="preview">One station per line: name, distance, cutoff (optional)'+(adv?', climb, descent':'')+', separated by tabs or commas. The first line is the start and the last line is the finish. This replaces the rows above.'+(clockCut?' Pick the day for each cutoff after pasting.':'')+'</p><textarea id="w-paste" class="in" placeholder="Group Camp	0&#10;Pickett	6.8&#10;Charit	19.2	6:00"></textarea><div style="margin-top:8px"><button type="button" class="btn" data-act="paste">Use these rows</button></div></details>';
     h+=renderImport();
   }
-  if(w.step===2){
-    h+='<div class="field"><label for="w-name">Race name</label><input class="in" id="w-name" value="'+esc(w.name)+'" placeholder="e.g. Big Fork 100" autocomplete="off"></div>';
-    h+='<div class="grid2"><div class="field"><label for="w-start">Start time</label>'+ampmField('w-start',w.startText,'6:00')+'<span class="help">Needed for time-of-day display and for cutoffs posted as clock times.</span></div>'+
-       '<div class="field"><label for="w-tz">Start time zone</label>'+tzSelect('id="w-tz"',w.raceTz||(w.editing?raceTzName():DEV_TZ),false)+'<span class="help">The time zone the race starts in. The start time and posted cutoffs are read in this zone.</span></div>'+
-       '<div class="field"><label for="w-date">Race date'+(bags?'':' (optional)')+'</label><input class="in" type="date" id="w-date" value="'+esc(w.startDate)+'"><span class="help">Adds weekday labels like Sat and Sun to clock times.</span></div></div>';
-    if(!bags) h+='<div class="field" style="max-width:none"><span class="flabel">How should the chart show times?</span><span class="help">You can toggle this later too.</span><div class="choices">'+
-       radio('w-disp','elapsed',w.display,'Race time','Hours since the start, e.g. 14:25')+radio('w-disp','clock',w.display,'Time of day','Clock time, e.g. Sat 8:25 PM')+'</div></div>';
-  }
   if(w.step===3&&bags){
-    if(!w.wins||w.wins.length!==w.rows.length) w.wins=w.rows.map((r,i)=>(w.wins&&w.wins[i])||{e:'',l:''});
-    h+='<div><h2>When will you get to each aid station?</h2><p class="preview" style="margin-top:6px;max-width:70ch">For each aid station, enter the earliest and latest time of day you could arrive. Your finish times are required. Fill in at least your drop bag stations; any you leave blank are estimated from the ones around them.</p></div>';
-    h+='<div class="stbox"><table class="sttable"><thead><tr><th></th><th>Aid station</th><th>Earliest</th><th>Latest</th></tr></thead><tbody>';
-    w.rows.forEach((r,i)=>{ if(i===0) return; const last=i===w.rows.length-1;
-      h+='<tr><td class="idx num">'+(last?'F':i)+'</td><td><b>'+esc(r.name||(last?'Finish':'Aid station '+i))+'</b></td>'+
-         '<td>'+ampmField('w-e'+i,w.wins[i].e,last?'Required':'2:30','Earliest at '+(r.name||'this aid station'))+'</td>'+
-         '<td>'+ampmField('w-l'+i,w.wins[i].l,last?'Required':'5:00','Latest at '+(r.name||'this aid station'))+'</td></tr>';
+    if(!w.wins||w.wins.length!==w.rows.length) w.wins=w.rows.map((r,i)=>(w.wins&&w.wins[i])||{e:'',ed:'',l:'',ld:''});
+    h+='<div><h2>When will you get to each aid station?</h2><p class="preview" style="margin-top:6px;max-width:70ch">For each aid station, pick the day and the earliest and latest time you could arrive. Your finish times are required. Fill in at least your drop bag stations; any you leave blank are estimated from the ones around them.</p></div>';
+    h+='<div class="stbox"><table class="sttable wintable"><thead><tr><th></th><th>Aid station</th><th>Earliest</th><th>Latest</th></tr></thead><tbody>';
+    w.rows.forEach((r,i)=>{ if(i===0) return; const last=i===w.rows.length-1, nm=r.name||(last?'Finish':'Aid station '+i);
+      h+='<tr><td class="idx num">'+(last?'F':i)+'</td><td><b>'+esc(nm)+'</b></td>'+
+         '<td>'+whenField('w-e'+i,w.wins[i].ed,w.wins[i].e,last?'Required':'2:30','Earliest at '+nm)+'</td>'+
+         '<td>'+whenField('w-l'+i,w.wins[i].ld,w.wins[i].l,last?'Required':'5:00','Latest at '+nm)+'</td></tr>';
     });
     h+='</tbody></table></div>';
   }
@@ -1116,9 +1173,8 @@ function renderWizard(){
     h+='</tbody></table></div>';
     h+='<div class="shotrow" style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">'+(w.plans.length<MAX_PLANS?'<button type="button" class="btn" data-act="addplan">Add another goal</button>':'')+
        '<span class="preview">'+w.plans.length+' of '+MAX_PLANS+' goal columns</span></div>';
-    h+='<h2 style="margin-top:8px">Cutoff</h2>';
+    h+='<h2 style="margin-top:8px">Cutoff</h2><p class="preview" style="margin:0">Overall cutoff: <b class="num">'+esc(fmtDur(parseDur(w.totalText)))+'</b> (from step 1).</p>';
     h+='<div class="grid2">'+
-      '<div class="field"><label for="w-total">Overall cutoff</label><input class="in num" id="w-total" value="'+esc(w.totalText)+'" placeholder="34:00"><span class="help">The race\'s finish time limit. Aid stations without a posted cutoff are estimated from this.</span></div>'+
       '<div class="field"><label for="w-lc">Column name</label><input class="in" id="w-lc" value="'+esc(w.labels.cut)+'"></div>'+
       '<div class="field"><label for="w-margin">Cutoff margin (minutes)</label><input class="in num" id="w-margin" inputmode="numeric" value="'+esc(w.marginText)+'" placeholder="15"><span class="help">How far ahead of each posted cutoff the plans must arrive. If even pace would be later than that, the plan speeds up before that station and eases off after. 15 to 30 minutes is common.</span></div>'+
       '</div>';
@@ -1141,7 +1197,8 @@ function parsePaste(txt){
   if(rows.length<2) return null;
   if(parseFloat(rows[0].distText)!==0) rows.unshift({name:'Start',distText:'0',cutText:''});
   const last=rows[rows.length-1]; rows[0].cutText='';
-  if(last.cutText){ wiz.totalText = last.cutText; last.cutText=''; }
+  if(last.cutText){ takeFinishCut(last.cutText); last.cutText=''; }
+  rows.forEach(r=>{ r.cutDay=''; });
   return rows;
 }
 
@@ -2273,7 +2330,7 @@ app.addEventListener('click',e=>{
   if(a==='example'){wiz=newDraft(EXAMPLE);wizErr='';render()}
   if(a==='back'){readWizInputs();wizErr='';wiz.step--;render()}
   if(a==='wadv'){readWizInputs();wiz.adv=b.dataset.v==='1';wizErr='';render();return}
-  if(a==='addrow'){readWizInputs();wiz.rows.splice(wiz.rows.length-1,0,{name:'',distText:'',cutText:''});render();
+  if(a==='addrow'){readWizInputs();wiz.rows.splice(wiz.rows.length-1,0,{name:'',distText:'',cutText:'',cutDay:''});render();
     const el=document.getElementById('w-n'+(wiz.rows.length-2)); if(el) el.focus()}
   if(a==='addplan'){readWizInputs(); if(wiz.plans.length<MAX_PLANS){
       const used=new Set(wiz.plans.map(p=>p.label.trim().toLowerCase()));
@@ -2300,8 +2357,10 @@ app.addEventListener('click',e=>{
   if(a==='xlsx'){saveXlsx()}
 });
 app.addEventListener('change',e=>{
+  // "6:00 pm" typed into a time box: move the PM into its AM/PM menu.
+  if(e.target.matches&&e.target.matches('.ampm input')){ const sel=document.getElementById(e.target.id+'ap'), v=splitClock(e.target.value); if(sel&&v.ap&&/^\d/.test(v.tm)&&/[ap]/i.test(e.target.value)){ e.target.value=v.tm; sel.value=v.ap; } }
   if(e.target.dataset&&e.target.dataset.chartsel&&chart){ chart[e.target.dataset.chartsel]=e.target.value; save(); render(); return; }
-  if(view==='wiz' && wiz && wiz.step===1 && (e.target.name==='w-unit'||e.target.name==='w-cf')){readWizInputs();render()}
+  if(view==='wiz' && wiz && wiz.step===2 && (e.target.name==='w-unit'||e.target.name==='w-cf')){readWizInputs();render()}
   if(view==='wiz' && e.target.id==='w-file'){ startImport(e.target.files&&e.target.files[0]); }
   if(view==='wiz' && imp && e.target.dataset.impf){ imp.map[e.target.dataset.impf]=+e.target.value; imp.err=''; render(); }
   if(view==='bags'){
@@ -2481,8 +2540,9 @@ function applyImport(){
   const rows=importRows(); if(!rows.length){ imp.err='No rows with distances to fill in. Check the column choices.'; render(); return; }
   if(parseFloat(rows[0].distText)!==0) rows.unshift({name:'Start',distText:'0',cutText:''});
   rows[0].cutText='';
-  const last=rows[rows.length-1]; if(last.cutText){ wiz.totalText=last.cutText; last.cutText=''; }
+  const last=rows[rows.length-1]; if(last.cutText){ takeFinishCut(last.cutText); last.cutText=''; }
   if(rows.some(r=>/[ap]\.?m/i.test(r.cutText))) wiz.cutoffFormat='clock';
+  rows.forEach(r=>{ r.cutDay=''; });
   if(rows.some(r=>r.gainText||r.lossText)&&wiz.mode!=='bags') wiz.adv=true;
   wiz.rows=rows; imp=null; wizErr=''; render();
 }

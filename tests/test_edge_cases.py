@@ -1,7 +1,7 @@
 """Harder cases: editing a chart after packing, odd text in names, clock-time cutoffs, metric climbs."""
 import datetime
 
-from conftest import chart, bags, BANDY, LAUREL, START, LOC_ONEIDA, LOC_JAMES, LOC_ROBBINS
+from conftest import chart, bags, new_race, set_when, details, BANDY, LAUREL, START, LOC_ONEIDA, LOC_JAMES, LOC_ROBBINS
 
 SOON = (datetime.date.today() + datetime.timedelta(days=4)).isoformat()
 
@@ -9,10 +9,10 @@ SOON = (datetime.date.today() + datetime.timedelta(days=4)).isoformat()
 def test_renaming_a_station_keeps_its_packed_bag(app):
     packed = {BANDY: {"items": [{"id": "socks", "name": "Socks", "qty": ""}], "dismissed": []}}
     app.seed([{"chart": chart(startDate=SOON), "bags": bags(locs={BANDY: LOC_JAMES}, bags=packed)}])
-    app.open_race(); app.act("edit")
+    app.open_race(); app.act("edit"); app.act("next")
     i = [app.page.input_value(f"#w-n{k}") for k in range(app.page.locator('[id^="w-n"]').count())].index("Bandy Creek")
     app.page.fill(f"#w-n{i}", "Bandy Creek Trailhead")
-    app.act("next"); app.act("next"); app.act("next")
+    app.act("next"); app.act("next")
     b = app.store()["races"][0]["bags"]
     key = next(k for k in b["picks"] if k.startswith("Bandy Creek"))
     assert key.startswith("Bandy Creek Trailhead@"), b["picks"]
@@ -23,10 +23,10 @@ def test_renaming_a_station_keeps_its_packed_bag(app):
 def test_moving_a_station_distance_keeps_its_packed_bag(app):
     packed = {BANDY: {"items": [{"id": "socks", "name": "Socks", "qty": ""}], "dismissed": []}}
     app.seed([{"chart": chart(startDate=SOON), "bags": bags(bags=packed)}])
-    app.open_race(); app.act("edit")
+    app.open_race(); app.act("edit"); app.act("next")
     i = [app.page.input_value(f"#w-n{k}") for k in range(app.page.locator('[id^="w-n"]').count())].index("Bandy Creek")
     app.page.fill(f"#w-d{i}", "23.9")
-    app.act("next"); app.act("next"); app.act("next")
+    app.act("next"); app.act("next")
     b = app.store()["races"][0]["bags"]
     assert "Bandy Creek@23.90" in b["picks"], b["picks"]
     assert b["bags"]["Bandy Creek@23.90"]["items"][0]["name"] == "Socks"
@@ -46,42 +46,52 @@ def test_html_in_names_is_shown_as_text(app):
 
 
 def test_time_of_day_cutoffs_across_midnight(app):
-    app.seed()
-    app.act("r-new"); app.act("r-mode", mode="basic")
+    new_race(app, name="Midnight", date=SOON, total="32:00")
     p = app.page
     p.check('input[name="w-cf"][value="clock"]')
-    rows = [("Night AS", 40, "11:30 PM"), ("Dawn AS", 70, "8:00 AM"), ("Finish", 100)]
     while p.locator('[id^="w-n"]').count() < 4:
         p.click('[data-act="addrow"]')
-    for i, r in enumerate(rows, start=1):
-        p.fill(f"#w-n{i}", r[0]); p.fill(f"#w-d{i}", str(r[1]))
-        if len(r) > 2: p.fill(f"#w-c{i}", r[2])
+    for i, (n, d) in enumerate([("Night AS", 40), ("Dawn AS", 70), ("Finish", 100)], start=1):
+        p.fill(f"#w-n{i}", n); p.fill(f"#w-d{i}", str(d))
+    set_when(p, "w-c1", 0, "11:30", "PM")
+    set_when(p, "w-c2", 1, "8:00", "AM")
     app.act("next")
-    p.fill("#w-name", "Midnight"); p.fill("#w-start", "6:00 AM"); p.fill("#w-date", SOON)
-    app.act("next")
-    p.fill("#w-pt0", "26:00"); p.fill("#w-pt1", "28:00"); p.fill("#w-total", "32:00")
+    p.fill("#w-pt0", "26:00"); p.fill("#w-pt1", "28:00")
     app.act("next")
     st = app.store()["races"][0]["chart"]["stations"]
-    assert st[1]["cutoff"] == 17 * 60 + 30          # 11:30 PM same day
-    assert st[2]["cutoff"] == 26 * 60               # 8:00 AM next day
+    assert st[1]["cutoff"] == 17 * 60 + 30          # 11:30 PM race day
+    assert st[2]["cutoff"] == 26 * 60               # 8:00 AM the next day
+    assert app.store()["races"][0]["chart"]["total"] == 32 * 60
+
+
+def test_cutoff_on_wrong_day_is_caught(app):
+    new_race(app, name="Order", date=SOON, total="32:00")
+    p = app.page
+    p.check('input[name="w-cf"][value="clock"]')
+    while p.locator('[id^="w-n"]').count() < 4:
+        p.click('[data-act="addrow"]')
+    for i, (n, d) in enumerate([("Night AS", 40), ("Dawn AS", 70), ("Finish", 100)], start=1):
+        p.fill(f"#w-n{i}", n); p.fill(f"#w-d{i}", str(d))
+    set_when(p, "w-c1", 0, "11:30", "PM")
+    set_when(p, "w-c2", 0, "8:00", "AM")          # race-day morning: before the cutoff above it
+    app.act("next")
+    assert "later than the cutoff at Night AS" in app.text(".err")
 
 
 def test_time_of_day_cutoff_on_daylight_saving_weekend(app):
     """Start Sat Oct 31 2026 at 6:00 AM Eastern; a posted 8:00 AM Sunday cutoff is 27 real hours later (clocks fall back)."""
-    app.seed()
-    app.act("r-new"); app.act("r-mode", mode="basic")
+    new_race(app, name="DST", date="2026-10-31", tz="America/New_York", total="32:00")
     p = app.page
     p.check('input[name="w-cf"][value="clock"]')
     while p.locator('[id^="w-n"]').count() < 4:
         p.click('[data-act="addrow"]')
-    p.fill("#w-n1", "Night AS"); p.fill("#w-d1", "40"); p.fill("#w-c1", "11:30 PM")
-    p.fill("#w-n2", "Dawn AS"); p.fill("#w-d2", "70"); p.fill("#w-c2", "8:00 AM")
+    p.fill("#w-n1", "Night AS"); p.fill("#w-d1", "40")
+    p.fill("#w-n2", "Dawn AS"); p.fill("#w-d2", "70")
     p.fill("#w-n3", "Finish"); p.fill("#w-d3", "100")
+    set_when(p, "w-c1", 0, "11:30", "PM")
+    set_when(p, "w-c2", 1, "8:00", "AM")
     app.act("next")
-    p.fill("#w-name", "DST"); p.fill("#w-start", "6:00 AM"); p.fill("#w-date", "2026-10-31")
-    p.select_option("#w-tz", "America/New_York")
-    app.act("next")
-    p.fill("#w-pt0", "26:00"); p.fill("#w-pt1", "28:00"); p.fill("#w-total", "32:00")
+    p.fill("#w-pt0", "26:00"); p.fill("#w-pt1", "28:00")
     app.act("next")
     st = app.store()["races"][0]["chart"]["stations"]
     assert st[1]["cutoff"] == 17 * 60 + 30          # Sat 11:30 PM, before the change
@@ -90,9 +100,9 @@ def test_time_of_day_cutoff_on_daylight_saving_weekend(app):
     p.click('[data-set="display"][data-val="clock"]')
     row = p.locator(".tablebox tbody tr").nth(2).inner_text().split("\t")
     assert row[-1].replace("\n", " ").endswith("8:00 AM")
-    app.act("edit")
-    assert (p.input_value("#w-c2"), p.input_value("#w-c2ap")) == ("8:00", "AM")
-    app.act("next"); app.act("next"); app.act("next")
+    app.act("edit"); app.act("next")
+    assert (p.input_value("#w-c2d"), p.input_value("#w-c2"), p.input_value("#w-c2ap")) == ("1", "8:00", "AM")
+    app.act("next"); app.act("next")
     assert app.store()["races"][0]["chart"]["stations"][2]["cutoff"] == 27 * 60
 
 
@@ -122,8 +132,7 @@ def test_excel_time_of_day_without_race_date(app, tmp_path):
 
 
 def test_back_keeps_what_was_typed_and_rows_reorder(app):
-    app.seed()
-    app.act("r-new"); app.act("r-mode", mode="basic")
+    new_race(app, name="Keep Me")
     p = app.page
     while p.locator('[id^="w-n"]').count() < 4:
         p.click('[data-act="addrow"]')
@@ -131,25 +140,24 @@ def test_back_keeps_what_was_typed_and_rows_reorder(app):
         p.fill(f"#w-n{i}", n); p.fill(f"#w-d{i}", str(d))
     p.click('[data-act="rowdown"][data-i="1"]')           # move B below A
     assert [p.input_value(f"#w-n{i}") for i in (1, 2)] == ["A Station", "B Station"]
-    app.act("next"); p.fill("#w-name", "Keep Me"); app.act("back")
-    assert p.input_value("#w-n1") == "A Station"
-    app.act("next")
+    app.act("back")
     assert p.input_value("#w-name") == "Keep Me"
+    app.act("next")
+    assert p.input_value("#w-n1") == "A Station"
 
 
 def test_five_goal_columns_and_margin_check(app):
-    app.seed()
-    app.act("r-new"); app.act("r-mode", mode="basic")
+    new_race(app, name="Goals", total="6:00")
     p = app.page
     p.fill("#w-n1", "Cut AS"); p.fill("#w-d1", "10"); p.fill("#w-c1", "1:00")
     p.fill("#w-n2", "Finish"); p.fill("#w-d2", "30")
-    app.act("next"); p.fill("#w-name", "Goals"); p.fill("#w-start", "6:00 AM"); app.act("next")
+    app.act("next")
     while p.locator('[data-act="addplan"]').count():
         p.click('[data-act="addplan"]')
     assert p.locator('[id^="w-pt"]').count() == 5
     for i, t in enumerate(["4:00", "4:30", "5:00", "5:30", "5:45"]):
         p.fill(f"#w-pt{i}", t)
-    p.fill("#w-total", "6:00"); p.fill("#w-margin", "90")
+    p.fill("#w-margin", "90")
     app.act("next")
     assert "longer than the time to the first cutoff" in app.text(".err")
     p.fill("#w-margin", "15"); app.act("next")
@@ -163,9 +171,9 @@ def test_changing_race_date_refetches_weather(app):
     app.seed([{"chart": chart(startDate=soon), "bags": bags(locs={START: LOC_ONEIDA, BANDY: LOC_JAMES, LAUREL: LOC_ROBBINS})}])
     app.open_race(); app.act("b-open"); app.page.wait_for_timeout(300)
     n = len(app.weather.calls)
-    app.act("b-exit"); app.act("edit"); app.act("next")
+    app.act("b-exit"); app.act("edit")
     later = (datetime.date.today() + datetime.timedelta(days=6)).isoformat()
-    app.page.fill("#w-date", later); app.act("next"); app.act("next")
+    app.page.fill("#w-date", later); app.act("next"); app.act("next"); app.act("next")
     app.act("b-open"); app.page.wait_for_timeout(300)
     assert len(app.weather.calls) > n
 

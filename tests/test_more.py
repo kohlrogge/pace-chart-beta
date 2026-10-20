@@ -68,9 +68,9 @@ def test_support_link_goes_straight_to_support(app):
 
 # ---------- importing a race's aid station chart ----------
 
-def start_import(app, path):
-    app.seed()
-    app.act("r-new"); app.act("r-mode", mode="basic")
+def start_import(app, path, total="30:00"):
+    from conftest import new_race
+    new_race(app, total=total)
     app.page.locator("details.paste").nth(1).click()
     app.page.set_input_files("#w-file", str(path))
     app.page.wait_for_selector(".impmap, .wiz .err", timeout=15000)
@@ -80,12 +80,11 @@ def test_import_csv_with_climb_and_descent(app, tmp_path):
     p = tmp_path / "chart.csv"
     p.write_text('Aid Station,Mile,Elev Gain,Elev Loss,Cutoff,Lat,Lon\nStart,0,,,,36.50,-84.51\nRidge,12.5,"3,200",800,,36.43,-84.93\n'
                  'Creek,30,1000,2900,9:00,36.36,-84.59\nFinish,50,1500,1500,15:00,36.50,-84.51\n')
-    start_import(app, p)
+    start_import(app, p, total="15:00")
     assert "4 aid stations found" in app.text(".impmap") and "climb and descent" in app.text(".impmap")
     app.act("impapply")
     assert app.page.input_value("#w-up1") == "3,200"          # switched to climbs and descents on its own
-    app.act("next"); app.page.fill("#w-name", "Imported"); app.page.fill("#w-start", "6:00 AM"); app.act("next")
-    assert app.page.input_value("#w-total") == "15:00"        # finish cutoff became the overall cutoff
+    assert app.page.input_value("#w-c3") == "15:00"           # finish row shows the overall cutoff
 
 
 def test_import_excel(app, tmp_path):
@@ -137,7 +136,7 @@ def test_phone_layouts_have_no_sideways_scroll(make_app):
     for _ in range(3):
         app.act("b-next"); app.page.wait_for_timeout(150)
         screens.append((app.page.locator(".dbsteps .on").inner_text(), app.no_hscroll()))
-    app.act("b-exit"); app.act("edit"); app.page.click('[data-act="wadv"][data-v="1"]')
+    app.act("b-exit"); app.act("edit"); app.act("next"); app.page.click('[data-act="wadv"][data-v="1"]')
     screens.append(("setup with climbs", app.no_hscroll()))
     w = app.page.locator("#w-n1").bounding_box()["width"]
     bad = [n for n, ok in screens if not ok]

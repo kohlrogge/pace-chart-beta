@@ -233,3 +233,32 @@ def bags(picks=(BANDY, LAUREL), locs=None, step="pick", **over):
     b = {"picks": list(picks), "bags": {}, "custom": [], "morning": [], "step": step, "locs": locs or {}}
     b.update(over)
     return b
+
+
+# ---- setup (wizard) helpers: step 1 race details, step 2 aid stations, step 3 targets ----
+def details(app, name="Test Race", date="2026-10-24", start="6:00 AM", total="15:00", tz=None, display=None):
+    p = app.page
+    p.fill("#w-name", name)
+    p.fill("#w-date", date)
+    p.fill("#w-start", start)
+    if tz:
+        p.select_option("#w-tz", tz)
+    if total is not None and p.locator("#w-total").count():
+        p.fill("#w-total", total)
+    if display:
+        p.check(f'input[name="w-disp"][value="{display}"]')
+    app.act("next")
+
+
+def new_race(app, mode="basic", **kw):
+    app.seed()
+    app.act("r-new")
+    app.act("r-mode", mode=mode)
+    details(app, **kw)
+
+
+def set_when(page, id_, day, time, ampm):
+    """A time-of-day field: day index (0 = race day), 12-hour time, AM/PM."""
+    page.select_option(f"#{id_}d", str(day))
+    page.fill(f"#{id_}", time)
+    page.select_option(f"#{id_}ap", ampm)

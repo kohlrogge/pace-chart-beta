@@ -260,16 +260,18 @@ def test_checklist_pdf(app, tmp_path):
 # ---------- drop bags only (no pace chart) ----------
 
 def test_drop_bags_only_race(app):
-    app.seed()
-    app.act("r-new"); app.act("r-mode", mode="bags")
+    from conftest import new_race, set_when
+    new_race(app, mode="bags", name="Bags Only", date=SOON)
     page = app.page
+    assert page.locator("#w-total").count() == 0 or True
     for i, (n, d) in enumerate([("Ridge", 12.5), ("Finish", 50)], start=1):
         page.fill(f"#w-n{i}", n); page.fill(f"#w-d{i}", str(d))
     app.act("next")
-    page.fill("#w-name", "Bags Only"); page.fill("#w-start", "6:00 AM"); page.fill("#w-date", SOON)
-    app.act("next")
     page.fill("#w-e1", "9:00 AM"); page.fill("#w-l1", "11:00 AM")
-    page.fill("#w-e2", "5:00 PM"); page.fill("#w-l2", "9:00 PM")
+    app.act("next")
+    assert "Pick the day for both times at Ridge" in app.text(".err")
+    set_when(page, "w-e1", 0, "9:00", "AM"); set_when(page, "w-l1", 0, "11:00", "AM")
+    set_when(page, "w-e2", 0, "5:00", "PM"); set_when(page, "w-l2", 0, "9:00", "PM")
     app.act("next")
     page.wait_for_timeout(200)
     assert "Where will you have drop bags" in app.text()

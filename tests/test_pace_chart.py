@@ -2,7 +2,7 @@
 import re
 
 import pytest
-from conftest import chart
+from conftest import chart, details, new_race, set_when
 
 
 def fill_stations(page, rows):
@@ -19,19 +19,11 @@ def fill_stations(page, rows):
 
 
 def build_basic(app, mode="basic", rows=None, name="Test 50", start="6:00 AM", date="2026-10-24", goals=("11:00", "13:00"), total="15:00"):
-    app.seed()
-    app.act("r-new")
-    app.act("r-mode", mode=mode)
+    new_race(app, mode=mode, name=name, start=start, date=date, total=total)
     fill_stations(app.page, rows or [("Ridge", 12.5), ("Creek", 30, "9:00"), ("Finish", 50)])
-    app.act("next")
-    app.page.fill("#w-name", name)
-    app.page.fill("#w-start", start)
-    if date:
-        app.page.fill("#w-date", date)
     app.act("next")
     for i, g in enumerate(goals):
         app.page.fill(f"#w-pt{i}", g)
-    app.page.fill("#w-total", total)
     app.act("next")
 
 
@@ -55,9 +47,7 @@ def test_build_basic_chart(app):
     ([("Ridge", 30), ("Creek", 20), ("Finish", 50)], ("11:00", "13:00"), "15:00", "farther than"),
 ])
 def test_setup_catches_bad_aid_stations(app, rows_, goals, total, msg):
-    app.seed()
-    app.act("r-new")
-    app.act("r-mode", mode="basic")
+    new_race(app)
     fill_stations(app.page, rows_)
     app.act("next")
     assert msg in app.text(".err")
@@ -105,15 +95,12 @@ def test_advanced_chart_matches_the_formula(app):
 
 
 def test_advanced_setup_and_paste(app):
-    app.seed()
-    app.act("r-new")
-    app.act("r-mode", mode="advanced")
+    new_race(app, mode="advanced", name="Ridge 50", total="15:00")
     app.page.locator("details.paste").first.click()
     app.page.fill("#w-paste", "Start\t0\nRidge\t12.5\t\t3,200\t800\nCreek\t30\t9:00\t1000\t2900\nFinish\t50\t15:00\t1500\t1500")
     app.act("paste")
     assert app.page.input_value("#w-up1") == "3,200"
-    app.act("next")
-    app.page.fill("#w-name", "Ridge 50"); app.page.fill("#w-start", "6:00 AM")
+    assert app.page.input_value("#w-c3") == "15:00"      # finish row shows the overall cutoff
     app.act("next")
     app.page.fill("#w-pt0", "11:00"); app.page.fill("#w-pt1", "13:00")
     app.act("next")
@@ -124,9 +111,7 @@ def test_advanced_setup_and_paste(app):
 
 
 def test_advanced_requires_some_elevation(app):
-    app.seed()
-    app.act("r-new")
-    app.act("r-mode", mode="advanced")
+    new_race(app, mode="advanced")
     fill_stations(app.page, [("Ridge", 12.5), ("Finish", 50)])
     app.act("next")
     assert "Add the climb and descent" in app.text(".err")
@@ -204,17 +189,40 @@ def test_copy_table(app):
     assert lines[0].startswith("Aid station\t") and "Group Camp" in lines[1]
 
 
-# ---------- time-of-day entry: 12-hour box + AM/PM menu ----------
+# ---------- race details first; time-of-day cutoffs with a day, time and AM/PM ----------
 
-def clock_setup(app, cut_time, cut_ampm=None):
+def test_race_details_come_first_and_date_is_required(app):
     app.seed()
     app.act("r-new"); app.act("r-mode", mode="basic")
+    assert "Race details" in app.text(".steps .on")
+    p = app.page
+    p.fill("#w-name", "No Date"); p.fill("#w-start", "6:00 AM"); p.fill("#w-total", "30:00")
+    app.act("next")
+    assert "Pick the race date" in app.text(".err")
+    p.fill("#w-date", "2026-10-24"); p.fill("#w-total", "")
+    app.act("next")
+    assert "overall cutoff" in app.text(".err")
+
+
+def test_overall_cutoff_prefills_finish_and_edits_flow_back(app):
+    new_race(app, total="30:00")
+    p = app.page
+    assert p.input_value("#w-c2") == "30:00"
+    p.fill("#w-c2", "32:00")
+    app.act("back")
+    assert p.input_value("#w-total") == "32:00"
+
+
+def clock_setup(app, cut_time, cut_ampm=None, day="0", total="15:00"):
+    new_race(app, total=total)
     p = app.page
     p.check('input[name="w-cf"][value="clock"]')
     p.fill("#w-n1", "Charit"); p.fill("#w-d1", "19.2")
     p.fill("#w-c1", cut_time)
     if cut_ampm:
         p.select_option("#w-c1ap", cut_ampm)
+    if day is not None:
+        p.select_option("#w-c1d", day)
     p.fill("#w-n2", "Finish"); p.fill("#w-d2", "50")
     app.act("next")
 
@@ -229,27 +237,55 @@ def test_time_of_day_cutoff_rejects_24_hour_time(app):
     assert "12-hour time" in app.text(".err")
 
 
-def test_time_of_day_cutoff_with_menu(app):
-    clock_setup(app, "2:45", "PM")
+def test_time_of_day_cutoff_needs_a_day(app):
+    clock_setup(app, "2:45", "PM", day=None)
+    assert "Pick the day for the cutoff at Charit" in app.text(".err")
+
+
+def test_day_menu_lists_the_race_days(app):
+    new_race(app, date="2026-10-24", total="34:00")
+    app.page.check('input[name="w-cf"][value="clock"]')
+    opts = app.page.eval_on_selector("#w-c1d", "e=>[...e.options].map(o=>o.text)")
+    assert opts[:3] == ["Day", "Sat, Oct 24", "Sun, Oct 25"]
+    # the finish row shows the overall cutoff as a day and time: 6:00 AM + 34 h = Sun 4:00 PM
     p = app.page
-    assert "Race details" in app.text(".steps .on")
-    p.fill("#w-name", "Clock"); p.fill("#w-start", "6:00"); p.select_option("#w-startap", "AM")
-    app.act("next")
-    p.fill("#w-pt0", "11:00"); p.fill("#w-pt1", "13:00"); p.fill("#w-total", "15:00")
+    assert (p.input_value("#w-c2d"), p.input_value("#w-c2"), p.input_value("#w-c2ap")) == ("1", "4:00", "PM")
+
+
+def test_time_of_day_cutoff_with_day_and_menu(app):
+    clock_setup(app, "2:45", "PM", day="0")
+    p = app.page
+    assert "Target times" in app.text(".steps .on")
+    p.fill("#w-pt0", "11:00"); p.fill("#w-pt1", "13:00")
     app.act("next")
     assert app.store()["races"][0]["chart"]["stations"][1]["cutoff"] == 8 * 60 + 45
-    # editing shows it back split into the box and the menu
-    app.act("edit")
-    assert p.input_value("#w-c1") == "2:45" and p.input_value("#w-c1ap") == "PM"
+    # editing shows it back split into day, box and menu
+    app.act("edit"); app.act("next")
+    assert (p.input_value("#w-c1d"), p.input_value("#w-c1"), p.input_value("#w-c1ap")) == ("0", "2:45", "PM")
+
+
+def test_next_day_cutoff(app):
+    clock_setup(app, "5:00", "AM", day="1", total="30:00")
+    app.page.fill("#w-pt0", "24:00"); app.page.fill("#w-pt1", "26:00")
+    app.act("next")
+    assert app.store()["races"][0]["chart"]["stations"][1]["cutoff"] == 23 * 60     # Sat 6 AM -> Sun 5 AM
+
+
+def test_finish_cutoff_typed_as_day_and_time_sets_overall(app):
+    new_race(app, total="30:00")
+    p = app.page
+    p.check('input[name="w-cf"][value="clock"]')
+    p.fill("#w-n1", "Ridge"); p.fill("#w-d1", "10"); p.fill("#w-n2", "Finish"); p.fill("#w-d2", "20")
+    set_when(p, "w-c2", 1, "2:00", "PM")
+    app.act("next"); app.act("back"); app.act("back")
+    assert p.input_value("#w-total") == "32:00"
 
 
 def test_start_time_needs_am_or_pm(app):
     app.seed()
     app.act("r-new"); app.act("r-mode", mode="basic")
     p = app.page
-    p.fill("#w-n1", "Ridge"); p.fill("#w-d1", "10"); p.fill("#w-n2", "Finish"); p.fill("#w-d2", "20")
-    app.act("next")
-    p.fill("#w-name", "Start AMPM"); p.fill("#w-start", "6:00")
+    p.fill("#w-name", "Start AMPM"); p.fill("#w-date", "2026-10-24"); p.fill("#w-start", "6:00"); p.fill("#w-total", "30:00")
     p.select_option("#w-startap", "")
     app.act("next")
     assert "Pick AM or PM for the start time" in app.text(".err")
@@ -258,13 +294,23 @@ def test_start_time_needs_am_or_pm(app):
 def test_imported_times_split_into_box_and_menu(app, tmp_path):
     p_ = tmp_path / "c.csv"
     p_.write_text("Aid Station,Mile,Cutoff\nStart,0,\nCharit,19.2,6:00 PM\nGrand Gap,28.4,21:30\nLaurel,45.2,6:00\nFinish,50,\n")
-    app.seed()
-    app.act("r-new"); app.act("r-mode", mode="basic")
+    new_race(app, total="34:00")
     app.page.locator("details.paste").nth(1).click()
     app.page.set_input_files("#w-file", str(p_))
     app.page.wait_for_selector(".impmap")
     app.act("impapply")
     p = app.page
-    assert (p.input_value("#w-c1"), p.input_value("#w-c1ap")) == ("6:00", "PM")
+    assert (p.input_value("#w-c1"), p.input_value("#w-c1ap"), p.input_value("#w-c1d")) == ("6:00", "PM", "")
     assert (p.input_value("#w-c2"), p.input_value("#w-c2ap")) == ("9:30", "PM")    # 21:30 converted
     assert (p.input_value("#w-c3"), p.input_value("#w-c3ap")) == ("6:00", "")      # ambiguous: runner must pick
+    app.act("next")
+    assert "Pick the day for the cutoff at Charit" in app.text(".err")
+
+
+def test_typed_am_pm_moves_into_the_menu(app):
+    app.seed()
+    app.act("r-new"); app.act("r-mode", mode="basic")
+    p = app.page
+    p.fill("#w-start", "6:30 pm")
+    p.dispatch_event("#w-start", "change")
+    assert (p.input_value("#w-start"), p.input_value("#w-startap")) == ("6:30", "PM")
