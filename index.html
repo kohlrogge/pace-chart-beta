@@ -1516,7 +1516,7 @@ function dbCtx(R,bags,k){
   return ctx;
 }
 function dbSuggest(b,ctx){
-  const out=[], add=(id,qty,why)=>{ if(!out.some(o=>o.id===id)) out.push({id,name:DB_BYID[id].name,qty:qty||'',why}); };
+  const out=[], add=(id,qty,why,name)=>{ if(!out.some(o=>o.id===id)) out.push({id,name:name||DB_BYID[id].name,qty:qty||'',why}); };
   if(b.kind==='finish'){ ['dryshoes','drysocks','change','hoodie'].forEach(id=>add(id,'','For after you finish')); return out; }
   const x=ctx.wx, h=ctx.hours, span=fmtHrs(ctx.mins)+' to '+ctx.nextBag+' at '+ctx.sel.label+' pace';
   ['musher','sanitizer','socks','wipes'].forEach(id=>add(id,'','Foot care kit, every bag'));
@@ -1539,6 +1539,13 @@ function dbSuggest(b,ctx){
   else if(ctx.maybeLamp){ const why='Just in case: at '+orList(ctx.maybeLamp.labels)+' pace you\'d hit dark before '+ctx.nextBag; add('headlamp','',why); add('batteries','',why+', if your headlamp needs them'); }
   else if(x.darkMin>0) add('batteries','','Fresh batteries in case yours run low before '+ctx.nextBag);
   add('coffee',x.darkMin>=180?'x2':'x1',x.darkMin>=180?'Two for running through the night':'Caffeine, every bag');
+  // What to start with: the runner's standard start kit, on top of the weather-based picks above.
+  if(b.kind==='start'){
+    const why='What you start with';
+    ['socks','tums'].forEach(id=>add(id,'',why)); add('salt','1 small bag',why); add('coffee','x1',why);
+    ['buff','shorts','bra','hat','gingins','scaps','cup','bladder','flask','vest','shirt'].forEach(id=>add(id,'',why));
+    add('shoes','',why,'Shoes'); add('blanket','',why); add('lightlayer','',why); add('headlamp','',why);
+  }
   if(b.kind==='drop'){
     let night=false;
     for(let el=ctx.w.early;el<=ctx.w.late+0.01;el+=15){const t=todOf(el);const sr=sunOf(el).rise; if(isDark(el)||(t>=sr&&t<sr+120)){night=true;break}}
