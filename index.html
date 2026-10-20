@@ -1126,6 +1126,20 @@ if(!store){
   if(oldChart&&!oldChart.isExample){const id='r_'+Date.now().toString(36);store.races.push({id,created:Date.now(),updated:Date.now(),mode:'basic',chart:oldChart,bags:oldBags||null});store.cur=id;}
 }
 function writeStore(){try{localStorage.setItem(STORE,JSON.stringify(store))}catch(e){}}
+/* Moving from the old address: its redirect page hands over that browser's saved races in the link's #carry= part
+   (the part after # is never sent to a server). Nothing is added until the runner says yes. */
+let carry=null;
+try{
+  const m=location.hash.match(/^#carry=([A-Za-z0-9_-]+)/);
+  if(m){
+    const j=JSON.parse(decodeURIComponent(escape(atob(m[1].replace(/-/g,'+').replace(/_/g,'/')))));
+    let list=(j.rp&&Array.isArray(j.rp.races)?j.rp.races:[]).filter(r=>r&&r.chart&&!r.chart.isExample);
+    if(!list.length&&j.pc&&j.pc.stations&&!j.pc.isExample) list=[{id:'r_old',created:Date.now(),updated:Date.now(),mode:'basic',chart:j.pc,bags:j.db||null}];
+    list=list.filter(r=>!store.races.some(x=>x.id===r.id));
+    if(list.length) carry=list;
+    history.replaceState(null,'',location.pathname+location.search);
+  }
+}catch(e){}
 function curRace(){return store.races.find(r=>r.id===store.cur)||null}
 function save(){const r=curRace(); if(!r||!chart) return; r.chart=chart; r.updated=Date.now(); writeStore();}
 function bpSave(){const r=curRace(); if(!r) return; r.bags=bp; r.updated=Date.now(); writeStore();}
@@ -1186,6 +1200,8 @@ function renderHome(){
   const races=store.races.slice().sort((a,b)=>{const da=raceStats(a).date,db_=raceStats(b).date;return (da?da:Infinity)-(db_?db_:Infinity)||b.updated-a.updated});
   h+='<section class="dbpanel"><div class="sumhead"><div><h2>Your saved races</h2><p class="preview" style="margin-top:6px">Saved in this browser on this device.</p></div>'+
      '<button type="button" class="btn primary" data-act="r-new">Plan a new race</button></div>';
+  if(carry) h+='<div class="banner"><p><b>Welcome to the new address!</b> We found '+carry.length+' saved race'+(carry.length>1?'s':'')+' from the old pace chart site ('+esc(carry.map(r=>r.chart.name||'Untitled race').join(', '))+'). Bring '+(carry.length>1?'them':'it')+' over to this browser?</p>'+
+     '<div class="row" style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" class="btn sm primary" data-act="r-carryyes">Bring '+(carry.length>1?'them':'it')+' over</button><button type="button" class="btn sm" data-act="r-carryno">No thanks</button></div></div>';
   if(!races.length) h+='<div class="empty"><p><b>No races yet.</b> Plan your first one: build a pace chart, then pack your drop bags.</p></div>';
   h+='<div class="racegrid">';
   races.forEach(r=>{
@@ -2178,6 +2194,8 @@ app.addEventListener('click',e=>{
   if(a.startsWith('r-')){
     const go=v=>{view=v;render();window.scrollTo(0,0)};
     if(a==='r-donate'){donateOpen=true;donStep='donate';render();return}
+    if(a==='r-carryyes'&&carry){carry.forEach(r=>{const c=Object.assign({},r);c.chart=normalize(c.chart);if(store.races.some(x=>x.id===c.id))c.id='r_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6);store.races.push(c);});carry=null;writeStore();render();return}
+    if(a==='r-carryno'){carry=null;render();return}
     if(a==='r-like'){donLiked=b.dataset.v==='yes';donStep='feedback';fbErr='';render();const t=document.getElementById('fb-text');if(t)t.focus();return}
     if(a==='r-fbsend'){sendFeedback();return}
     if(a==='r-fbskip'){fbText='';donStep=donLiked?'donate':'thanks';render();return}
