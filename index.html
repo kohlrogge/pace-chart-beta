@@ -1772,7 +1772,7 @@ function dbBagView(R,bags,k){
   if(ctx.needLamp){
     const ss=x.events.find(e=>e.type==='sunset');
     alerts.push({items:['headlamp'],ico:'headlamp',todo:'Pack a headlamp.',done:'Headlamp packed.',
-      why:(ss?'Sunset is at '+clockParts(ss.sel).text+zSfx(ss.sel)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark.'});
+      why:(ss?'Sunset is at '+clockParts(ss.sel).text+zSfx(ss.sel)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark, and bring batteries if your headlamp needs them.'});
   }
   // Warm gear and layers: if an earlier bag (or the start) already has it, ask whether she still has it instead of repeating the warning.
   const SAT={lightlayer:['lightlayer','extralayer','longsleeve','jacket','windshell','rainjacket'],extralayer:['extralayer','jacket'],beanie:['beanie'],gloves:['gloves'],rainjacket:['rainjacket']};
