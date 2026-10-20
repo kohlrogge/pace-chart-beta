@@ -1483,6 +1483,7 @@ function dbLocBox(){
 }
 function fmtHrs(min){min=Math.round(min);const h=Math.floor(min/60),m=min%60;return h?(h+' hr'+(m?' '+m+' min':'')):m+' min'}
 
+function orList(a){ return a.length<2?(a[0]||''):a.slice(0,-1).join(', ')+' or '+a[a.length-1]; }
 function dbCtx(R,bags,k){
   const b=bags[k], w=dbWin(R,b.i), ctx={b,w};
   curLoc=locAtDist(R.rows[b.i].dist);
@@ -1502,6 +1503,12 @@ function dbCtx(R,bags,k){
     // If she could reach this bag after dark, the stretch before it already told her to carry a headlamp.
     ctx.hasLamp=k>0&&isDark(ctx.from);
     ctx.needLamp=ctx.wx.darkMin>0&&!ctx.hasLamp;
+    // The chosen pace stays in daylight, but would a slower column put her in the dark on this stretch?
+    ctx.maybeLamp=null;
+    if(!ctx.needLamp&&!ctx.hasLamp){
+      const slower=ctx.legs.filter(l=>l!==ctx.sel&&l.to>ctx.sel.to).map(l=>({l,dark:dbWx(l.from,l.to,R.rows[b.i].dist,R.rows[nx.i].dist).darkMin})).filter(x=>x.dark>0);
+      if(slower.length) ctx.maybeLamp={labels:slower.map(x=>x.l.label),dark:Math.max(...slower.map(x=>x.dark))};
+    }
     ctx.gap=null;
     for(let j=b.i;j<nx.i;j++){const d=R.rows[j+1].dist-R.rows[j].dist; if(!ctx.gap||d>ctx.gap.mi) ctx.gap={mi:d,from:R.rows[j].first?'the start':R.rows[j].name,to:R.rows[j+1].last?'the finish':R.rows[j+1].name};}
     const na=R.rows[b.i+1]; ctx.aidName=na.last?'the finish':na.name; ctx.miAid=na.dist-R.rows[b.i].dist;
@@ -1529,6 +1536,7 @@ function dbSuggest(b,ctx){
   if(x.hi>80) ['sunscreen','hat','icebandana'].forEach(id=>add(id,'','High of '+fmtT(x.hi)));
   if(x.rain>=40) ['rainjacket','zipbag'].forEach(id=>add(id,'','Up to '+x.rain+'% chance of rain'));
   if(ctx.needLamp) ['headlamp','batteries','backuplight'].forEach(id=>add(id,'','About '+fmtHrs(x.darkMin)+' in the dark before '+ctx.nextBag));
+  else if(ctx.maybeLamp) add('headlamp','','Just in case: at '+orList(ctx.maybeLamp.labels)+' pace you\'d hit dark before '+ctx.nextBag);
   else if(x.darkMin>0) add('batteries','','Fresh batteries in case yours run low before '+ctx.nextBag);
   add('coffee',x.darkMin>=180?'x2':'x1',x.darkMin>=180?'Two for running through the night':'Caffeine, every bag');
   if(b.kind==='drop'){
@@ -1806,6 +1814,11 @@ function dbBagView(R,bags,k){
     h+='<div class="alert'+(packed?' ok':'')+'" role="status"><span class="aico">'+icon(a.ico)+'</span><div><b>'+esc(packed||a.short?a.done:a.todo)+'</b> '+esc(packed&&a.cond?a.cond:a.why)+
        (!packed&&missing.length&&missing.length<a.items.length?' Still missing: '+esc(names.join(', '))+'.':'')+(a.btn?' '+a.btn:'')+'</div></div>';
   });
+  if(ctx.maybeLamp){
+    const m=ctx.maybeLamp, packed=have.has('headlamp');
+    h+='<div class="alert info" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>'+(packed?'Headlamp packed, just in case.':'Consider packing a headlamp.')+'</b> '+
+       'At '+esc(ctx.sel.label)+' pace you\'ll reach '+esc(ctx.nextBag)+' before dark. But if you slow to '+esc(orList(m.labels))+' pace, you\'d be in the dark for up to '+esc(fmtHrs(m.dark))+' of this stretch.'+(packed?'':' A headlamp in this bag covers you if the day goes sideways.')+'</div></div>';
+  }
   if(!ctx.needLamp&&ctx.hasLamp&&x.darkMin>0){
     h+='<div class="alert info" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>Headlamp check.</b> '+'At '+esc(ctx.sel.label)+' pace you\'ll arrive after dark, so your headlamp should already be on.'+' There\'s up to '+esc(fmtHrs(x.darkMin))+' more of darkness before '+esc(ctx.nextBag)+'. '+
        'Will your batteries last that long? If not, pack spares in this bag. Consider packing a spare light if you don\'t already have one.</div></div>';
