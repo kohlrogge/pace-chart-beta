@@ -91,6 +91,7 @@ def test_weather_error_then_retry(app):
     app.weather.fail = True
     open_bags(app)
     app.act("b-next")
+    app.page.wait_for_function("!/Getting the weather/.test(document.querySelector('.wxtop').innerText)")
     assert "couldn't get the weather" in app.text(".wxtop").lower()
     app.weather.fail = False
     app.page.click('.wxtop [data-act="b-wx"]')

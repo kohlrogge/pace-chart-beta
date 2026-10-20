@@ -91,7 +91,7 @@ def test_time_of_day_cutoff_on_daylight_saving_weekend(app):
     row = p.locator(".tablebox tbody tr").nth(2).inner_text().split("\t")
     assert row[-1].replace("\n", " ").endswith("8:00 AM")
     app.act("edit")
-    assert p.input_value("#w-c2") == "8:00 AM"
+    assert (p.input_value("#w-c2"), p.input_value("#w-c2ap")) == ("8:00", "AM")
     app.act("next"); app.act("next"); app.act("next")
     assert app.store()["races"][0]["chart"]["stations"][2]["cutoff"] == 27 * 60
 

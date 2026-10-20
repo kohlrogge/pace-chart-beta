@@ -322,6 +322,7 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .meter{height:10px;border-radius:999px;background:var(--row);overflow:hidden;max-width:420px}
 .meter i{display:block;height:100%;background:var(--teal)}
 /* visual bag + item pictures */
+.ampm{display:flex;gap:6px;align-items:center}.ampm .in{min-width:0}.ampm input{flex:1 1 4.5rem;max-width:7rem}.ampm select{flex:0 0 auto;width:auto;padding-right:24px}
 .tzsel{width:auto;min-width:11rem;padding:6px 10px;font-size:.9rem}
 .locwarn{grid-column:1/-1;color:#7a5300;background:#fff4d6;border-left:4px solid #e0a21b;padding:6px 8px;border-radius:6px}
 .legal a{color:var(--teal);font-weight:600}
@@ -609,6 +610,37 @@ function parseClock(str){
   else if(h>23) return NaN;
   return h*60+mm;
 }
+/* Time-of-day entry in setup: a 12-hour box plus an AM/PM menu, so "2:45" can't be read both ways.
+   Stored as text like "2:45 PM". 24-hour values from imports (14:45) are converted for display; an
+   ambiguous one (6:00 with no AM/PM) leaves the menu blank so the runner has to pick. */
+function splitClock(t){
+  t=String(t||'').trim(); if(!t) return {tm:'',ap:''};
+  let m=t.match(/^(.*?)\s*([ap])\.?\s*m?\.?$/i); if(m&&m[1]) return {tm:m[1].trim(),ap:m[2].toUpperCase()+'M'};
+  m=t.match(/^(\d{1,2})(?::(\d{2}))?$/);
+  if(m){ const h=+m[1]; if(h===0||(h>12&&h<24)) return {tm:(h%12||12)+':'+(m[2]||'00'),ap:h>=12?'PM':'AM'}; }
+  return {tm:t,ap:''};
+}
+function clock12(t){   // strict: "h[:mm] AM|PM" with h 1-12 -> minutes after midnight, else null
+  const m=String(t||'').trim().match(/^(\d{1,2})(?::([0-5]\d))?\s*([AP])M$/i); if(!m) return null;
+  const h=+m[1]; if(h<1||h>12) return null;
+  return ((h%12)+(m[3].toUpperCase()==='P'?12:0))*60+(+(m[2]||0));
+}
+function clockErr(t,what){   // '' when fine
+  const s=splitClock(t);
+  if(!s.ap&&/\d/.test(s.tm)){ const m=s.tm.match(/^(\d{1,2})/); if(m&&(+m[1]>12||+m[1]===0)) return what+' should be a 12-hour time like 6:00, with AM or PM picked.'; return 'Pick AM or PM for '+what.toLowerCase()+'.'; }
+  return clock12(t)==null?what+' should be a 12-hour time like 6:00 or 6:30, with AM or PM picked.':'';
+}
+function ampmField(id,text,ph,label){
+  const v=splitClock(text);
+  return '<span class="ampm"><input class="in num" id="'+id+'" inputmode="decimal" value="'+esc(v.tm)+'" placeholder="'+esc(ph||'6:00')+'" autocomplete="off"'+(label?' aria-label="'+esc(label)+'"':'')+'>'+
+    '<select class="in" id="'+id+'ap" aria-label="AM or PM'+(label?' for '+esc(label):'')+'"><option value="">AM/PM</option><option'+(v.ap==='AM'?' selected':'')+'>AM</option><option'+(v.ap==='PM'?' selected':'')+'>PM</option></select></span>';
+}
+function readAmpm(id){
+  const a=document.getElementById(id), b=document.getElementById(id+'ap'); if(!a) return null;
+  let t=a.value.trim(), ap=b?b.value:''; const m=t.match(/\s*([ap])\.?\s*m?\.?\s*$/i);
+  if(m&&t.slice(0,m.index).trim()){ ap=m[1].toUpperCase()+'M'; t=t.slice(0,m.index).trim(); }   // typed "2:45 pm" in the box
+  return t?t+(ap?' '+ap:''):'';
+}
 function fmtClock12(tod){tod=((Math.round(tod)%1440)+1440)%1440;const h=Math.floor(tod/60),m=tod%60;const ap=h<12?'AM':'PM';const h12=h%12===0?12:h%12;return h12+':'+pad(m)+' '+ap}
 function fmtTime24(tod){return pad(Math.floor(tod/60))+':'+pad(tod%60)}
 function dayLabel(dayIdx){
@@ -853,7 +885,7 @@ function newDraft(from){
     labels:{cut:'Cutoff'},plans:[{label:'Goal',time:null},{label:'B Goal',time:null}],total:null,margin:15,
     stations:[{name:'Start',dist:0,cutoff:null},{name:'',dist:null,cutoff:null},{name:'Finish',dist:null,cutoff:null}]};
   const eu=c.entryUnit||c.unit||'mi';
-  const d={step:1,name:c.name,entryUnit:eu,display:c.display,detail:c.detail||'buffer',startDate:c.startDate||'',startText:fmtTime24(c.startTime),
+  const d={step:1,name:c.name,entryUnit:eu,display:c.display,detail:c.detail||'buffer',startDate:c.startDate||'',startText:fmtClock12(c.startTime),
     cutoffFormat:c.cutoffFormat||'elapsed',labels:clone(c.labels),marginText:String(marginOf(c)),
     plans:c.plans.map(p=>({label:p.label,timeText:p.time!=null?fmtDur(p.time):''})),totalText:c.total!=null?fmtDur(c.total):'',
     rows:[]};
@@ -871,11 +903,11 @@ function readWizInputs(){
   if(wiz.step===1){
     const u=document.querySelector('input[name=w-unit]:checked');if(u)wiz.entryUnit=u.value;
     const f=document.querySelector('input[name=w-cf]:checked'); if(f) wiz.cutoffFormat=f.value;
-    wiz.rows.forEach((r,i)=>{const n=q('w-n'+i),d=q('w-d'+i),c=q('w-c'+i),up=q('w-up'+i),dn=q('w-dn'+i);if(n)r.name=n.value;if(d)r.distText=d.value;if(c)r.cutText=c.value;if(up)r.gainText=up.value;if(dn)r.lossText=dn.value});
+    wiz.rows.forEach((r,i)=>{const n=q('w-n'+i),d=q('w-d'+i),c=q('w-c'+i),cv=q('w-c'+i+'ap')?readAmpm('w-c'+i):null,up=q('w-up'+i),dn=q('w-dn'+i);if(n)r.name=n.value;if(d)r.distText=d.value;if(c)r.cutText=cv!=null?cv:c.value;if(up)r.gainText=up.value;if(dn)r.lossText=dn.value});
     const ds=document.querySelector('input[name=w-desc]:checked'); if(ds) wiz.descent=ds.value;
   }
-  if(wiz.step===2){const tzq=q('w-tz'); if(tzq) wiz.raceTz=tzq.value; wiz.name=q('w-name').value;wiz.startDate=q('w-date').value;wiz.startText=q('w-start').value;if(wiz.mode==='bags')wiz.display='clock';const d=document.querySelector('input[name=w-disp]:checked');if(d)wiz.display=d.value}
-  if(wiz.step===3&&wiz.mode==='bags'){ wiz.wins.forEach((w,i)=>{const e=q('w-e'+i),l=q('w-l'+i);if(e)w.e=e.value;if(l)w.l=l.value}); return; }
+  if(wiz.step===2){const tzq=q('w-tz'); if(tzq) wiz.raceTz=tzq.value; wiz.name=q('w-name').value;wiz.startDate=q('w-date').value;wiz.startText=readAmpm('w-start')||'';void q('w-start').value;if(wiz.mode==='bags')wiz.display='clock';const d=document.querySelector('input[name=w-disp]:checked');if(d)wiz.display=d.value}
+  if(wiz.step===3&&wiz.mode==='bags'){ wiz.wins.forEach((w,i)=>{const e=readAmpm('w-e'+i),l=readAmpm('w-l'+i);if(e!=null)w.e=e;if(l!=null)w.l=l}); return; }
   if(wiz.step===3){
     wiz.plans.forEach((p,i)=>{const l=q('w-pl'+i),t=q('w-pt'+i);if(l)p.label=l.value;if(t)p.timeText=t.value});
     wiz.labels.cut=q('w-lc').value||'Cutoff';
@@ -897,7 +929,7 @@ function draftClock(c,el){
   const tz=c.raceTz||DEV_TZ, [y,m,d]=c.startDate.split('-').map(Number);
   return fmtClock12(localParts(zonedUTC(y,m,d,c.startTime,tz)+Math.round(el)*60000,tz).min);
 }
-function startMin(){const v=parseClock(wiz.startText);return (v==null||isNaN(v))?NaN:v}
+function startMin(){const v=clock12(wiz.startText);return v==null?NaN:v}
 
 function buildStations(syntaxOnly){
   // returns {stations} or {err}. syntaxOnly: check clock cutoffs' format without converting (start time not known yet)
@@ -913,7 +945,7 @@ function buildStations(syntaxOnly){
     let cut=null;
     if(i>0 && i<rows.length-1 && r.cutText.trim()){
       if(wiz.cutoffFormat==='clock'){
-        const c=parseClock(r.cutText); if(c==null||isNaN(c)) return {err:'The cutoff for '+name+' should look like 6:00 PM or 18:00.'};
+        const ce=clockErr(r.cutText,'The cutoff for '+name); if(ce) return {err:ce}; const c=clock12(r.cutText);
         if(syntaxOnly){cut=1; out.push({name,dist:d,cutoff:cut}); continue}
         if(isNaN(sm)) return {err:'Add a valid start time in step 2 so time-of-day cutoffs can be converted.'};
         let e=((c-sm)%1440+1440)%1440; while(e<=prevNaive) e+=1440; prevNaive=e; cut=wizReal(e);
@@ -943,7 +975,7 @@ function validateStep(){
   if(wiz.step===1){const b=buildStations(true); if(b.err) return b.err}
   if(wiz.step===2){
     if(!wiz.name.trim()) return 'Give the race a name.';
-    const s=startMin(); if(isNaN(s)) return 'Enter a start time like 6:00 AM or 06:00.';
+    const s=startMin(); if(isNaN(s)) return clockErr(wiz.startText,'The start time')||'Enter a start time like 6:00 and pick AM or PM.';
     if(wiz.mode==='bags'&&!wiz.startDate) return 'Add the race date. The drop bag planner needs it for the weather and daylight.';
     const b=buildStations(); if(b.err) return b.err;
   }
@@ -980,8 +1012,8 @@ function buildWins(){
     const et=w.e.trim(), lt=w.l.trim();
     if(!et&&!lt){ if(last) return {err:'Enter your earliest and latest finish times.'}; out.push(null); continue; }
     if(!et||!lt) return {err:'Enter both an earliest and a latest time for '+name+', or leave both blank.'};
-    const ec=parseClock(et), lc=parseClock(lt);
-    if(ec==null||isNaN(ec)||lc==null||isNaN(lc)) return {err:'Times for '+name+' should look like 2:30 PM or 14:30.'};
+    const ee=clockErr(et,'The earliest time for '+name)||clockErr(lt,'The latest time for '+name); if(ee) return {err:ee};
+    const ec=clock12(et), lc=clock12(lt);
     const roll=(tod,prev)=>{let x=((tod-sm)%1440+1440)%1440; while(x<prev) x+=1440; return x;};
     const e=roll(ec,pe), l=roll(lc,Math.max(pl,e));
     out.push({early:wizReal(e),late:wizReal(l)}); pe=e; pl=l;
@@ -1046,7 +1078,7 @@ function renderWizard(){
          '<td><input class="in" id="w-n'+i+'" value="'+esc(r.name)+'" placeholder="'+(first?'Start':last?'Finish':'Aid station name')+'"></td>'+
          '<td><input class="in num" id="w-d'+i+'" inputmode="decimal" value="'+(first?'0':esc(r.distText))+'"'+(first?' readonly':'')+' placeholder="0.0"></td>'+
          (adv?(first?'<td></td><td></td>':'<td><input class="in num" id="w-up'+i+'" inputmode="numeric" value="'+esc(r.gainText||'')+'" placeholder="0" aria-label="Climb into '+esc(r.name||'this aid station')+'"></td><td><input class="in num" id="w-dn'+i+'" inputmode="numeric" value="'+esc(r.lossText||'')+'" placeholder="0" aria-label="Descent into '+esc(r.name||'this aid station')+'"></td>'):'')+
-         (bags?'':'<td>'+(first||last?'<span class="note">'+(first?'None':'Set in step 3')+'</span>':'<input class="in num" id="w-c'+i+'" value="'+esc(r.cutText)+'" placeholder="Optional">')+'</td>')+
+         (bags?'':'<td>'+(first||last?'<span class="note">'+(first?'None':'Set in step 3')+'</span>':(w.cutoffFormat==='clock'?ampmField('w-c'+i,r.cutText,'Optional','Cutoff for '+(r.name||'this aid station')):'<input class="in num" id="w-c'+i+'" value="'+esc(r.cutText)+'" placeholder="Optional">'))+'</td>')+
          '<td class="rowtools">'+(first||last?'':'<button type="button" class="mv" data-act="rowup" data-i="'+i+'" aria-label="Move '+esc(r.name||'row')+' up"'+(i===1?' disabled':'')+'>↑</button><button type="button" class="mv" data-act="rowdown" data-i="'+i+'" aria-label="Move '+esc(r.name||'row')+' down"'+(i===w.rows.length-2?' disabled':'')+'>↓</button><button type="button" class="rm" data-act="rmrow" data-i="'+i+'" aria-label="Remove '+esc(r.name||'row')+'">×</button>')+'</td></tr>';
     });
     h+='</tbody></table></div><div><button type="button" class="btn" data-act="addrow">Add aid station</button></div>';
@@ -1055,7 +1087,7 @@ function renderWizard(){
   }
   if(w.step===2){
     h+='<div class="field"><label for="w-name">Race name</label><input class="in" id="w-name" value="'+esc(w.name)+'" placeholder="e.g. Big Fork 100" autocomplete="off"></div>';
-    h+='<div class="grid2"><div class="field"><label for="w-start">Start time</label><input class="in" id="w-start" value="'+esc(w.startText)+'" placeholder="6:00 AM"><span class="help">Needed for time-of-day display and for cutoffs posted as clock times.</span></div>'+
+    h+='<div class="grid2"><div class="field"><label for="w-start">Start time</label>'+ampmField('w-start',w.startText,'6:00')+'<span class="help">Needed for time-of-day display and for cutoffs posted as clock times.</span></div>'+
        '<div class="field"><label for="w-tz">Start time zone</label>'+tzSelect('id="w-tz"',w.raceTz||(w.editing?raceTzName():DEV_TZ),false)+'<span class="help">The time zone the race starts in. The start time and posted cutoffs are read in this zone.</span></div>'+
        '<div class="field"><label for="w-date">Race date'+(bags?'':' (optional)')+'</label><input class="in" type="date" id="w-date" value="'+esc(w.startDate)+'"><span class="help">Adds weekday labels like Sat and Sun to clock times.</span></div></div>';
     if(!bags) h+='<div class="field" style="max-width:none"><span class="flabel">How should the chart show times?</span><span class="help">You can toggle this later too.</span><div class="choices">'+
@@ -1067,8 +1099,8 @@ function renderWizard(){
     h+='<div class="stbox"><table class="sttable"><thead><tr><th></th><th>Aid station</th><th>Earliest</th><th>Latest</th></tr></thead><tbody>';
     w.rows.forEach((r,i)=>{ if(i===0) return; const last=i===w.rows.length-1;
       h+='<tr><td class="idx num">'+(last?'F':i)+'</td><td><b>'+esc(r.name||(last?'Finish':'Aid station '+i))+'</b></td>'+
-         '<td><input class="in num" id="w-e'+i+'" value="'+esc(w.wins[i].e)+'" placeholder="'+(last?'Required':'2:30 PM')+'" autocomplete="off"></td>'+
-         '<td><input class="in num" id="w-l'+i+'" value="'+esc(w.wins[i].l)+'" placeholder="'+(last?'Required':'5:00 PM')+'" autocomplete="off"></td></tr>';
+         '<td>'+ampmField('w-e'+i,w.wins[i].e,last?'Required':'2:30','Earliest at '+(r.name||'this aid station'))+'</td>'+
+         '<td>'+ampmField('w-l'+i,w.wins[i].l,last?'Required':'5:00','Latest at '+(r.name||'this aid station'))+'</td></tr>';
     });
     h+='</tbody></table></div>';
   }

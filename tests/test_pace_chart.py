@@ -202,3 +202,69 @@ def test_copy_table(app):
         txt = app.page.evaluate("navigator.clipboard.readText()")
     lines = txt.splitlines()
     assert lines[0].startswith("Aid station\t") and "Group Camp" in lines[1]
+
+
+# ---------- time-of-day entry: 12-hour box + AM/PM menu ----------
+
+def clock_setup(app, cut_time, cut_ampm=None):
+    app.seed()
+    app.act("r-new"); app.act("r-mode", mode="basic")
+    p = app.page
+    p.check('input[name="w-cf"][value="clock"]')
+    p.fill("#w-n1", "Charit"); p.fill("#w-d1", "19.2")
+    p.fill("#w-c1", cut_time)
+    if cut_ampm:
+        p.select_option("#w-c1ap", cut_ampm)
+    p.fill("#w-n2", "Finish"); p.fill("#w-d2", "50")
+    app.act("next")
+
+
+def test_time_of_day_cutoff_needs_am_or_pm(app):
+    clock_setup(app, "2:45")
+    assert "Pick AM or PM" in app.text(".err")
+
+
+def test_time_of_day_cutoff_rejects_24_hour_time(app):
+    clock_setup(app, "14:45")
+    assert "12-hour time" in app.text(".err")
+
+
+def test_time_of_day_cutoff_with_menu(app):
+    clock_setup(app, "2:45", "PM")
+    p = app.page
+    assert "Race details" in app.text(".steps .on")
+    p.fill("#w-name", "Clock"); p.fill("#w-start", "6:00"); p.select_option("#w-startap", "AM")
+    app.act("next")
+    p.fill("#w-pt0", "11:00"); p.fill("#w-pt1", "13:00"); p.fill("#w-total", "15:00")
+    app.act("next")
+    assert app.store()["races"][0]["chart"]["stations"][1]["cutoff"] == 8 * 60 + 45
+    # editing shows it back split into the box and the menu
+    app.act("edit")
+    assert p.input_value("#w-c1") == "2:45" and p.input_value("#w-c1ap") == "PM"
+
+
+def test_start_time_needs_am_or_pm(app):
+    app.seed()
+    app.act("r-new"); app.act("r-mode", mode="basic")
+    p = app.page
+    p.fill("#w-n1", "Ridge"); p.fill("#w-d1", "10"); p.fill("#w-n2", "Finish"); p.fill("#w-d2", "20")
+    app.act("next")
+    p.fill("#w-name", "Start AMPM"); p.fill("#w-start", "6:00")
+    p.select_option("#w-startap", "")
+    app.act("next")
+    assert "Pick AM or PM for the start time" in app.text(".err")
+
+
+def test_imported_times_split_into_box_and_menu(app, tmp_path):
+    p_ = tmp_path / "c.csv"
+    p_.write_text("Aid Station,Mile,Cutoff\nStart,0,\nCharit,19.2,6:00 PM\nGrand Gap,28.4,21:30\nLaurel,45.2,6:00\nFinish,50,\n")
+    app.seed()
+    app.act("r-new"); app.act("r-mode", mode="basic")
+    app.page.locator("details.paste").nth(1).click()
+    app.page.set_input_files("#w-file", str(p_))
+    app.page.wait_for_selector(".impmap")
+    app.act("impapply")
+    p = app.page
+    assert (p.input_value("#w-c1"), p.input_value("#w-c1ap")) == ("6:00", "PM")
+    assert (p.input_value("#w-c2"), p.input_value("#w-c2ap")) == ("9:30", "PM")    # 21:30 converted
+    assert (p.input_value("#w-c3"), p.input_value("#w-c3ap")) == ("6:00", "")      # ambiguous: runner must pick
