@@ -1816,7 +1816,7 @@ function dbBagView(R,bags,k){
   });
   if(ctx.maybeLamp){
     const m=ctx.maybeLamp, packed=have.has('headlamp');
-    h+='<div class="alert info" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>'+(packed?'Headlamp packed, just in case.':'Consider packing a headlamp.')+'</b> '+
+    h+='<div class="alert '+(packed?'ok':'info')+'" role="status"><span class="aico">'+icon('headlamp')+'</span><div><b>'+(packed?'Headlamp packed, just in case.':'Consider packing a headlamp.')+'</b> '+
        'At '+esc(ctx.sel.label)+' pace you\'ll reach '+esc(ctx.nextBag)+' before dark. But if you slow to '+esc(orList(m.labels))+' pace, you\'d be in the dark for up to '+esc(fmtHrs(m.dark))+' of this stretch.'+(packed?'':' A headlamp in this bag covers you if the day goes sideways.')+'</div></div>';
   }
   if(!ctx.needLamp&&ctx.hasLamp&&x.darkMin>0){
