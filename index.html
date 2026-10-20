@@ -319,6 +319,7 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .meter{height:10px;border-radius:999px;background:var(--row);overflow:hidden;max-width:420px}
 .meter i{display:block;height:100%;background:var(--teal)}
 /* visual bag + item pictures */
+.tzsel{width:auto;min-width:11rem;padding:6px 10px;font-size:.9rem}
 .legal a{color:var(--teal);font-weight:600}
 .wxtop{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:var(--mist,#eef3f4);border-radius:10px;padding:12px 14px}.wxtop p{margin:0;max-width:70ch}
 .wxlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
@@ -511,7 +512,7 @@ function buildPdf(jsPDF){
   let fy=doc.lastAutoTable.finalY+16;
   doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(90,104,110);
   const note=(R.adv?'Plan times factor in climb and descent: each 1,000 ft of climbing counts as 1.9 extra miles; downhills are set to '+(DESC_OPTS.find(o=>o[0]===(chart.descent||'mixed'))[1].toLowerCase())+'. ':'')+'Red cutoff times are posted by the race; grey cutoff times are estimated from the overall cutoff. Shaded plan times were moved earlier so the runner arrives at least '+R.margin+' minutes before that posted cutoff; pace between those points stays even.'+
-    (chart.display==='clock'?' Times are time of day.':' Times are elapsed race time (hours:minutes).');
+    (chart.display==='clock'?' Times are time of day, '+tzLabel(showTzName())+'.':' Times are elapsed race time (hours:minutes).');
   const lines=doc.splitTextToSize(note,W-2*M);
   if(fy+lines.length*10>doc.internal.pageSize.getHeight()-24){ doc.addPage(); fy=48; }
   doc.text(lines,M,fy);
@@ -526,12 +527,12 @@ async function saveXlsx(){
   try{
     try{ if(!window.XLSX) await loadScript(XLSX_URL); }catch(e){ pdfMsg='The spreadsheet tool couldn\'t load. Check your internet connection and try again.'; return; }
     const R=compute(chart), X=window.XLSX, clock=chart.display==='clock', seg=showSeg();
-    let base=null; if(chart.startDate){ const [y,m,d]=chart.startDate.split('-').map(Number); base=(Date.UTC(y,m-1,d)-Date.UTC(1899,11,30))/864e5; }
-    const tcell=t=>(t=Math.round(t),clock?(base!=null?{t:'n',v:base+(chart.startTime+t)/1440,z:'ddd h:mm AM/PM'}:{t:'s',v:showTimePlain(t)}):{t:'n',v:t/1440,z:'[h]:mm'});
+    const xl=t=>{ const p=localParts(instantOf(t),showTzName()); return (Date.UTC(p.y,p.m-1,p.d)-Date.UTC(1899,11,30))/864e5+p.min/1440; };
+    const tcell=t=>(t=Math.round(t),clock?(chart.startDate?{t:'n',v:xl(t),z:'ddd h:mm AM/PM'}:{t:'s',v:showTimePlain(t)}):{t:'n',v:t/1440,z:'[h]:mm'});
     const head=['Aid station',uLabel()].concat(seg?['Segment ('+uLabel()+')']:[]).concat(R.adv?['Climb ('+eLabel()+')','Descent ('+eLabel()+')']:[])
       .concat(R.plans.map(p=>p.label+' '+fmtDur(p.target))).concat([chart.labels.cut+' '+fmtDur(R.T),'Cutoff type','Adjusted for cutoff']);
     const when=(chart.startDate?new Date(chart.startDate+'T12:00:00').toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',year:'numeric'})+', start ':'Start ')+fmtClock12(chart.startTime);
-    const aoa=[[chart.name||'Pace chart'],[when+'. Plans arrive at least '+R.margin+' minutes before posted cutoffs. Times are '+(clock?'time of day':'race time (hours:minutes)')+'.'],[],head];
+    const aoa=[[chart.name||'Pace chart'],[when+'. Plans arrive at least '+R.margin+' minutes before posted cutoffs. Times are '+(clock?'time of day, '+tzLabel(showTzName()):'race time (hours:minutes)')+'.'],[],head];
     const num=(v,z)=>({t:'n',v:+v.toFixed(2),z});
     R.rows.forEach((r,i)=>{
       const fe=v=>Math.round(chart.unit==='km'?(+v||0)/FT_PER_M:(+v||0));
@@ -612,7 +613,32 @@ function dayLabel(dayIdx){
   }
   return 'Day '+(dayIdx+1);
 }
-function clockParts(elapsed){const tot=chart.startTime+Math.round(elapsed);return {day:Math.floor(tot/1440),text:fmtClock12(tot%1440)}}
+/* Time zones. The race clock (start time, posted cutoffs) is in chart.raceTz, set in setup; older charts fall back to the
+   start location's zone, then this device's. Every clock time is then shown in one display zone the runner picks
+   (chart.showTz, default: the race's own zone). Weather and sun times are looked up in each location's own zone. */
+const DEV_TZ=(()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC'}catch(e){return 'UTC'}})();
+const TZ_LIST=[['America/New_York','Eastern'],['America/Chicago','Central'],['America/Denver','Mountain'],['America/Phoenix','Arizona'],['America/Los_Angeles','Pacific'],['America/Anchorage','Alaska'],['Pacific/Honolulu','Hawaii'],['UTC','UTC']];
+const _tzf=new Map();
+function tzFmt(tz){ let f=_tzf.get(tz); if(!f){ try{ f=new Intl.DateTimeFormat('en-US',{timeZone:tz,hourCycle:'h23',year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'}); }catch(e){ f=tz==='UTC'?null:tzFmt('UTC'); } _tzf.set(tz,f); } return f; }
+function localParts(ms,tz){ const o={}; tzFmt(tz).formatToParts(new Date(ms)).forEach(p=>o[p.type]=p.value); return {y:+o.year,m:+o.month,d:+o.day,min:(+o.hour%24)*60+(+o.minute)}; }
+function tzOff(tz,ms){ const p=localParts(ms,tz); return (Date.UTC(p.y,p.m-1,p.d)+p.min*60000-Math.floor(ms/60000)*60000)/60000; }
+function zonedUTC(y,m,d,min,tz){ const g=Date.UTC(y,m-1,d)+min*60000; const r=g-tzOff(tz,g)*60000; return g-tzOff(tz,r)*60000; }
+function raceTzName(){ return (chart&&chart.raceTz)||(typeof bp!=='undefined'&&bp&&bp.wx&&bp.wx.locs&&bp.wx.locs.race&&bp.wx.locs.race.tz)||DEV_TZ; }
+function showTzName(){ return chart&&chart.showTz&&chart.showTz!=='race'?chart.showTz:raceTzName(); }
+function raceDate(){ return chart.startDate||new Date().toISOString().slice(0,10); }
+let _t0k='',_t0v=0;
+function t0(){ const k=raceDate()+'|'+chart.startTime+'|'+raceTzName(); if(k!==_t0k){ const [y,m,d]=raceDate().split('-').map(Number); _t0v=zonedUTC(y,m,d,chart.startTime,raceTzName()); _t0k=k; } return _t0v; }
+function instantOf(el){ return t0()+Math.round(el)*60000; }
+function tzLabel(tz){ const n=(TZ_LIST.find(x=>x[0]===tz)||[0,tz.replace(/_/g,' ').replace(/^.*\//,'')])[1], a=tzAbbr(tz,0); return a&&a!==n?n+' ('+a+')':n; }
+function tzSelect(attr,cur,withRace){
+  const opts=TZ_LIST.slice(); [DEV_TZ,chart&&chart.raceTz,cur].forEach(z=>{ if(z&&z!=='race'&&!opts.some(o=>o[0]===z)) opts.push([z,'']); });
+  return '<select class="in tzsel" '+attr+'>'+(withRace?'<option value="race"'+(!cur||cur==='race'?' selected':'')+'>Race time zone ('+esc(tzAbbr(raceTzName(),0))+')</option>':'')+
+    opts.map(([z])=>'<option value="'+esc(z)+'"'+(cur===z?' selected':'')+'>'+esc(tzLabel(z))+'</option>').join('')+'</select>';
+}
+function clockParts(elapsed){
+  const p=localParts(instantOf(elapsed),showTzName()), [y,m,d]=raceDate().split('-').map(Number);
+  return {day:Math.round((Date.UTC(p.y,p.m-1,p.d)-Date.UTC(y,m-1,d))/864e5),text:fmtClock12(p.min)};
+}
 function showTime(elapsed){
   if(chart.display==='clock'){const c=clockParts(elapsed);return '<span class="day">'+esc(dayLabel(c.day))+'</span>'+c.text}
   return fmtDur(elapsed);
@@ -779,6 +805,7 @@ function renderChart(){
   h+='<div class="controls">'+
      '<div class="ctl"><span class="eyebrow">Distance</span>'+segBtns('unit',[['mi','Miles'],['km','Kilometers']],chart.unit)+'</div>'+
      '<div class="ctl"><span class="eyebrow">Show times as</span>'+segBtns('display',[['elapsed','Race time'],['clock','Time of day']],chart.display)+'</div>'+
+     (chart.display==='clock'?'<div class="ctl"><span class="eyebrow">Time zone</span>'+tzSelect('data-chartsel="showTz" aria-label="Show times in this time zone"',chart.showTz||'race',true)+'</div>':'')+
      '<div class="ctl"><span class="eyebrow">Arrive ahead of cutoffs by</span>'+marginBtns()+'</div>'+
      '<div class="ctl"><span class="eyebrow">Segment column</span>'+segBtns('showSeg',[['show','Show'],['hide','Hide']],showSeg()?'show':'hide')+'</div>'+
      (chart.adv?'<div class="ctl"><span class="eyebrow">Downhills</span>'+segBtns('descent',DESC_OPTS,chart.descent||'mixed')+'</div>':'')+
@@ -826,7 +853,7 @@ function newDraft(from){
     cutoffFormat:c.cutoffFormat||'elapsed',labels:clone(c.labels),marginText:String(marginOf(c)),
     plans:c.plans.map(p=>({label:p.label,timeText:p.time!=null?fmtDur(p.time):''})),totalText:c.total!=null?fmtDur(c.total):'',
     rows:[]};
-  d.adv=!!c.adv; d.descent=c.descent||'mixed';
+  d.adv=!!c.adv; d.descent=c.descent||'mixed'; d.raceTz=c.raceTz||'';
   if(c.manual){ d.mode='bags'; d.wins=c.stations.map((s,i)=>{const w=c.windows&&c.windows[i]; return w?{e:fmtClock12(c.startTime+w.early),l:fmtClock12(c.startTime+w.late)}:{e:'',l:''}}); }
   d.rows=c.stations.map(s=>({name:s.name,distText:s.dist==null?'':String(+(eu==='km'?s.dist*KM:s.dist).toFixed(2)),
     cutText:s.cutoff==null?'':(d.cutoffFormat==='clock'?fmtClock12(c.startTime+s.cutoff):fmtDur(s.cutoff)),
@@ -843,7 +870,7 @@ function readWizInputs(){
     wiz.rows.forEach((r,i)=>{const n=q('w-n'+i),d=q('w-d'+i),c=q('w-c'+i),up=q('w-up'+i),dn=q('w-dn'+i);if(n)r.name=n.value;if(d)r.distText=d.value;if(c)r.cutText=c.value;if(up)r.gainText=up.value;if(dn)r.lossText=dn.value});
     const ds=document.querySelector('input[name=w-desc]:checked'); if(ds) wiz.descent=ds.value;
   }
-  if(wiz.step===2){wiz.name=q('w-name').value;wiz.startDate=q('w-date').value;wiz.startText=q('w-start').value;if(wiz.mode==='bags')wiz.display='clock';const d=document.querySelector('input[name=w-disp]:checked');if(d)wiz.display=d.value}
+  if(wiz.step===2){const tzq=q('w-tz'); if(tzq) wiz.raceTz=tzq.value; wiz.name=q('w-name').value;wiz.startDate=q('w-date').value;wiz.startText=q('w-start').value;if(wiz.mode==='bags')wiz.display='clock';const d=document.querySelector('input[name=w-disp]:checked');if(d)wiz.display=d.value}
   if(wiz.step===3&&wiz.mode==='bags'){ wiz.wins.forEach((w,i)=>{const e=q('w-e'+i),l=q('w-l'+i);if(e)w.e=e.value;if(l)w.l=l.value}); return; }
   if(wiz.step===3){
     wiz.plans.forEach((p,i)=>{const l=q('w-pl'+i),t=q('w-pt'+i);if(l)p.label=l.value;if(t)p.timeText=t.value});
@@ -949,13 +976,14 @@ function finishWizard(){
   const b=buildStations();
   if(wiz.mode==='bags'){
     const wv=buildWins();
-    chart={isExample:false,manual:true,name:wiz.name.trim(),unit:wiz.entryUnit,entryUnit:wiz.entryUnit,display:'clock',detail:'buffer',startDate:wiz.startDate,startTime:startMin(),
+    chart={isExample:false,manual:true,raceTz:wiz.raceTz||DEV_TZ,name:wiz.name.trim(),unit:wiz.entryUnit,entryUnit:wiz.entryUnit,display:'clock',detail:'buffer',startDate:wiz.startDate,startTime:startMin(),
       cutoffFormat:'clock',labels:{cut:'Latest'},plans:[],total:wv.wins[wv.wins.length-1].late,margin:0,stations:b.stations,windows:wv.wins};
   } else {
-  chart={isExample:false,adv:!!wiz.adv,descent:wiz.descent||'mixed',name:wiz.name.trim(),unit:wiz.entryUnit,entryUnit:wiz.entryUnit,display:wiz.display,detail:wiz.detail,
+  chart={isExample:false,raceTz:wiz.raceTz||DEV_TZ,adv:!!wiz.adv,descent:wiz.descent||'mixed',name:wiz.name.trim(),unit:wiz.entryUnit,entryUnit:wiz.entryUnit,display:wiz.display,detail:wiz.detail,
     startDate:wiz.startDate,startTime:startMin(),cutoffFormat:wiz.cutoffFormat,labels:wiz.labels,
     plans:wiz.plans.map(p=>({label:p.label.trim(),time:parseDur(p.timeText)})).sort((a,b)=>a.time-b.time),total:parseDur(wiz.totalText),margin:+wiz.marginText.trim(),stations:b.stations};
   }
+  if(wiz.editing&&wiz.prev) ['showTz','tz','tempUnit','showSeg'].forEach(k=>{ if(wiz.prev[k]!=null) chart[k]=wiz.prev[k]; });
   if(wiz.isNew){
     const id='r_'+Date.now().toString(36);
     store.races.push({id,created:Date.now(),updated:Date.now(),mode:wiz.mode||'basic',chart:null,bags:null}); store.cur=id; bp=bpFresh();
@@ -1006,6 +1034,7 @@ function renderWizard(){
   if(w.step===2){
     h+='<div class="field"><label for="w-name">Race name</label><input class="in" id="w-name" value="'+esc(w.name)+'" placeholder="e.g. Big Fork 100" autocomplete="off"></div>';
     h+='<div class="grid2"><div class="field"><label for="w-start">Start time</label><input class="in" id="w-start" value="'+esc(w.startText)+'" placeholder="6:00 AM"><span class="help">Needed for time-of-day display and for cutoffs posted as clock times.</span></div>'+
+       '<div class="field"><label for="w-tz">Start time zone</label>'+tzSelect('id="w-tz"',w.raceTz||(w.editing?raceTzName():DEV_TZ),false)+'<span class="help">The time zone the race starts in. The start time and posted cutoffs are read in this zone.</span></div>'+
        '<div class="field"><label for="w-date">Race date'+(bags?'':' (optional)')+'</label><input class="in" type="date" id="w-date" value="'+esc(w.startDate)+'"><span class="help">Adds weekday labels like Sat and Sun to clock times.</span></div></div>';
     if(!bags) h+='<div class="field" style="max-width:none"><span class="flabel">How should the chart show times?</span><span class="help">You can toggle this later too.</span><div class="choices">'+
        radio('w-disp','elapsed',w.display,'Race time','Hours since the start, e.g. 14:25')+radio('w-disp','clock',w.display,'Time of day','Clock time, e.g. Sat 8:25 PM')+'</div></div>';
@@ -1251,11 +1280,13 @@ function clk(el){const c=clockParts(el);return dayLabel(c.day)+' '+c.text}
 const SAMPLE_SUNRISE=420, SAMPLE_SUNSET=1140;   // used only when no weather could be loaded
 let curLoc=null, wxBusy=false, geoHits=null, geoBusy=false, geoErr='', stGeo={};
 const pad2=n=>String(n).padStart(2,'0');
-function todOf(el){return ((chart.startTime+Math.round(el))%1440+1440)%1440}
+function locTz(){ return (curLoc&&curLoc.tz)||raceTzName(); }
+function locParts(el){ return localParts(instantOf(el),locTz()); }
+function todOf(el){ return locParts(el).min; }
 function baseUTC(){const [y,m,d]=(chart.startDate||'2000-01-01').split('-').map(Number);return Date.UTC(y,m-1,d)}
 function elDate(el){return new Date(baseUTC()+(chart.startTime+Math.round(el))*60000)}
 function mdKey(dt){return pad2(dt.getUTCMonth()+1)+'-'+pad2(dt.getUTCDate())}
-function hourKey(el){const dt=elDate(el);return mdKey(dt)+'T'+pad2(dt.getUTCHours())}
+function hourKey(el){const p=locParts(el);return pad2(p.m)+'-'+pad2(p.d)+'T'+pad2(Math.floor(p.min/60))}
 function isoDay(ms){const dt=new Date(ms);return dt.getUTCFullYear()+'-'+pad2(dt.getUTCMonth()+1)+'-'+pad2(dt.getUTCDate())}
 const okLoc=l=>l&&isFinite(l.lat)&&isFinite(l.lon);
 function hasWx(){ return !!(bp.wx&&bp.wx.locs&&bp.wx.locs.race&&!bp.wx.err); }
@@ -1271,13 +1302,14 @@ function locSrcAt(d){
 }
 function locAtDist(d){ return locSrcAt(d).L; }
 // Short time zone name (EDT, CDT...) for a location on the race day. Sun times are in that spot's local time.
-function tzAbbr(tz,el){ if(!tz) return ''; try{ const [y,m,d]=(chart.startDate||'2000-01-01').split('-').map(Number), dt=new Date(Date.UTC(y,m-1,d,17)+Math.round(el||0)*60000);
+function tzAbbr(tz,el){ if(!tz) return ''; try{ const dt=new Date(instantOf(el||0));
   return new Intl.DateTimeFormat('en-US',{timeZone:tz,timeZoneName:'short'}).formatToParts(dt).find(p=>p.type==='timeZoneName').value; }catch(e){ return ''; } }
-function tzSfx(tz,el){ if(chart&&chart.tz==='hide') return ''; const a=tzAbbr(tz,el); return a?' '+a:''; }
-// Race clock: the time zone of the start (or the first drop bag with a location).
-function raceTz(el){ return hasWx()&&bp.wx.locs.race?tzSfx(bp.wx.locs.race.tz,el):''; }
-function wxZones(){ if(!hasWx()) return []; return [...new Set(Object.values(bp.wx.locs).map(l=>tzAbbr(l.tz,0)).filter(Boolean))]; }
-function sunOf(el){ const L=curLoc&&curLoc.sun&&curLoc.sun[mdKey(elDate(el))]; return L?{rise:L[0],set:L[1]}:{rise:SAMPLE_SUNRISE,set:SAMPLE_SUNSET}; }
+// Label for a displayed time: the display zone's short name, unless the runner hid labels.
+function zSfx(el){ if(chart&&chart.tz==='hide') return ''; const a=tzAbbr(showTzName(),el); return a?' '+a:''; }
+// Sunrise and sunset come in the location's own minutes; sunEl turns one into race-elapsed minutes so it can be shown in the display zone.
+function sunEl(el,at){ const p=locParts(el); return (zonedUTC(p.y,p.m,p.d,at,locTz())-t0())/60000; }
+function sunClock(el,which){ const e=sunEl(el,sunOf(el)[which]); return clockParts(e).text+zSfx(e); }
+function sunOf(el){ const p=locParts(el), L=curLoc&&curLoc.sun&&curLoc.sun[pad2(p.m)+'-'+pad2(p.d)]; return L?{rise:L[0],set:L[1]}:{rise:SAMPLE_SUNRISE,set:SAMPLE_SUNSET}; }
 function isDark(el){const t=todOf(el), s=sunOf(el);return t<s.rise||t>=s.set}
 function wxAt(el){
   const h=curLoc&&curLoc.h&&curLoc.h[hourKey(el)];
@@ -1292,12 +1324,12 @@ function dbWx(from,to,d0,d1){
     if(d0!=null&&hasWx()) curLoc=locAtDist(d0+(d1-d0)*(to>from?(el-from)/(to-from):0));
     const w=wxAt(el);lo=Math.min(lo,w.lo);hi=Math.max(hi,w.hi);rain=Math.max(rain,w.rain);
     const d=isDark(el); if(d&&el<to) darkMin+=Math.min(step,to-el);
-    if(prev!==null&&d!==prev){ const s=sunOf(el); events.push({type:d?'sunset':'sunrise',el,at:d?s.set:s.rise,tz:hasWx()&&curLoc?curLoc.tz:''}); } prev=d;
+    if(prev!==null&&d!==prev){ const s=sunOf(el); events.push({type:d?'sunset':'sunrise',el,sel:sunEl(el,d?s.set:s.rise)}); } prev=d;
   }
   curLoc=keep;
   return {lo:Math.round(lo),hi:Math.round(hi),rain:Math.round(rain),darkMin,events};
 }
-function evText(ev){const c=clockParts(ev.el);return (ev.type==='sunset'?'Sunset ':'Sunrise ')+dayLabel(c.day)+' '+fmtClock12(ev.at)+tzSfx(ev.tz,ev.el)}
+function evText(ev){const c=clockParts(ev.sel);return (ev.type==='sunset'?'Sunset ':'Sunrise ')+dayLabel(c.day)+' '+c.text+zSfx(ev.sel)}
 
 // What to fetch: the race location plus every aid station the runner gave a location.
 // Locations are only asked for at the start and the drop bag stations.
@@ -1420,7 +1452,7 @@ function wxBanner(){
   if(!hasWx()) return '<div class="banner"><p>Weather hasn\'t loaded yet.</p><button type="button" class="btn sm" data-act="b-wx">Get weather</button></div>';
   const n=Math.max(1,Object.keys(bp.wx.locs).length-1), where=n>1?'your '+n+' locations':esc(raceLoc().name);
   const at=new Date(bp.wx.at).toLocaleString('en-US',{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
-  const zs=wxZones(), zn=zs.length>1?' <b>Heads up: your locations are in more than one time zone ('+zs.join(' and ')+').</b> Sunrise and sunset are shown in each spot\'s local time; your arrival times are whatever clock your pace chart uses.':zs.length?' Sunrise and sunset are in '+zs[0]+'.':'';
+  const zn=' All times are shown in '+esc(tzLabel(showTzName()))+'.';
   if(bp.wx.kind==='forecast') return '<div class="banner"><p><b>Forecast for '+where+'</b>, updated '+esc(at)+'. Forecasts change, so check again the day before you pack.'+zn+'</p><button type="button" class="btn sm" data-act="b-wx">Refresh</button></div>';
   const ys=(bp.wx.locs.race.years||[]);
   return '<div class="banner"><p><b>Typical weather for '+where+'</b> on your race dates'+(ys.length?' in '+ys.join(', '):'')+'. Warnings use the coldest and hottest of those years. The real forecast shows up within about two weeks of race day.'+zn+'</p></div>';
@@ -1522,6 +1554,7 @@ function renderBags(){
   h+=wxBanner();
   h+='<div class="controls dbunits"><div class="ctl"><span class="eyebrow">Distance</span>'+segBtns('unit',[['mi','Miles'],['km','Kilometers']],chart.unit)+'</div>'+
      '<div class="ctl"><span class="eyebrow">Temperature</span>'+segBtns('tempUnit',[['F','°F'],['C','°C']],tUnit())+'</div>'+
+     '<div class="ctl"><span class="eyebrow">Show times in</span>'+tzSelect('data-chartsel="showTz" aria-label="Show times in this time zone"',chart.showTz||'race',true)+'</div>'+
      '<div class="ctl"><span class="eyebrow">Time zone on times</span>'+segBtns('tz',[['show','Show'],['hide','Hide']],chart.tz==='hide'?'hide':'show')+'</div></div>';
   h+='<nav class="dbsteps" aria-label="Planner steps">'+steps.map(([k,l],j)=>'<button type="button" data-act="b-go" data-step="'+esc(k)+'" class="'+(j===cur?'on':j<cur?'done':'')+'"'+(j===cur?' aria-current="step"':'')+'>'+esc(l)+'</button>').join('')+'</nav>';
   if(dbErr) h+='<p class="err" role="alert">'+esc(dbErr)+'</p>';
@@ -1555,6 +1588,9 @@ function dbWeather(R,bags){
       :'<b>Using typical weather</b> for your race dates'+(ys.length?' in '+ys.join(', '):'')+'. The real forecast shows up within about two weeks of race day.'; }
   h+='<div class="wxtop"><p>'+top+'</p><div class="row" style="display:flex;gap:8px;flex-wrap:wrap">'+(chart.startDate&&raceLoc()&&!wxBusy?'<button type="button" class="btn sm" data-act="b-wx">'+(hasWx()?'Refresh weather':'Try again')+'</button>':'')+
      '<button type="button" class="btn sm" data-act="b-go" data-step="pick">Change locations</button></div></div>';
+  { const SL=hasWx()&&bp.wx.locs['s:'+stKey(chart.stations[0])];
+    if(SL&&SL.tz&&chart.raceTz&&tzOff(SL.tz,t0())!==tzOff(chart.raceTz,t0()))
+      h+='<div class="banner"><p><b>Check your start time zone.</b> Your start location is on '+esc(tzLabel(SL.tz))+' time, but this race\'s start time is set to '+esc(tzLabel(chart.raceTz))+'. If that\'s wrong, fix it with Edit chart on Race home, in step 2.</p></div>'; }
   h+='<div class="wxlist">';
   bags.forEach((b,k)=>{
     if(b.kind==='finish') return;
@@ -1565,7 +1601,7 @@ function dbWeather(R,bags){
     if(!hasWx()){ status='No weather yet, so this stretch uses a sample day.'; cls='warn'; }
     else {
       const src=locSrcAt(r.dist), own=src.key===key;
-      const z=src.L&&src.L.tz?' Times for sunrise and sunset are in '+esc(tzAbbr(src.L.tz,0))+'.':'';
+      const z='';
       if(own) status='Using weather from this location.'+z;
       else { cls='warn'; const from=esc(stName(src.key));
         status=(okLoc(mine)?'Unable to pull weather for this exact location, so this stretch uses the weather from '+from+'.':
@@ -1692,12 +1728,12 @@ function dbBagView(R,bags,k){
   // conditions
   h+='<div class="conds">';
   if(b.kind==='start'){
-    h+=cond('You start',esc(clk(0)+raceTz(0)),isDark(0)?'In the dark':'In daylight',isDark(0)?'dark':'');
+    h+=cond('You start',esc(clk(0)+zSfx(0)),isDark(0)?'In the dark':'In daylight',isDark(0)?'dark':'');
   } else {
-    h+=cond('You arrive',esc(clk(w.early)+raceTz(w.early))+'<br>to '+esc(clk(w.late)+raceTz(w.late)),esc(w.eLab)+' to '+esc(w.lLab));
+    h+=cond('You arrive',esc(clk(w.early)+zSfx(w.early))+'<br>to '+esc(clk(w.late)+zSfx(w.late)),esc(w.eLab)+' to '+esc(w.lLab));
     const d1=isDark(w.early),d2=isDark(w.late);
     const lightTxt=d1&&d2?'Dark':!d1&&!d2?'Daylight':(d1?'Dark or daylight':'Daylight or dark');
-    const lightNote=d1===d2?(d1?'Arriving after dark':'Arriving in daylight'):(!d1?'Sunset '+fmtClock12(sunOf(w.early).set)+(hasWx()&&curLoc?tzSfx(curLoc.tz,w.early):'')+', you may arrive after dark':'Sunrise '+fmtClock12(sunOf(w.late).rise)+(hasWx()&&curLoc?tzSfx(curLoc.tz,w.late):'')+', you may arrive in the dark');
+    const lightNote=d1===d2?(d1?'Arriving after dark':'Arriving in daylight'):(!d1?'Sunset '+sunClock(w.early,'set')+', you may arrive after dark':'Sunrise '+sunClock(w.late,'rise')+', you may arrive in the dark');
     h+=cond('Light',lightTxt,lightNote,d1&&d2?'dark':'');
   }
   if(b.kind!=='finish'){
@@ -1727,7 +1763,7 @@ function dbBagView(R,bags,k){
   if(ctx.needLamp){
     const ss=x.events.find(e=>e.type==='sunset');
     alerts.push({items:['headlamp','batteries'],ico:'headlamp',todo:'Pack a headlamp.',done:'Headlamp packed.',
-      why:(ss?'Sunset is at '+fmtClock12(ss.at)+tzSfx(ss.tz,ss.el)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark, so bring headlamp batteries as well.'});
+      why:(ss?'Sunset is at '+clockParts(ss.sel).text+zSfx(ss.sel)+', before you reach '+ctx.nextBag+'.':'You\'ll be running in the dark on the way to '+ctx.nextBag+'.')+' Plan on about '+fmtHrs(x.darkMin)+' in the dark, so bring headlamp batteries as well.'});
   }
   // Warm gear and layers: if an earlier bag (or the start) already has it, ask whether she still has it instead of repeating the warning.
   const SAT={lightlayer:['lightlayer','extralayer','longsleeve','jacket','windshell','rainjacket'],extralayer:['extralayer','jacket'],beanie:['beanie'],gloves:['gloves'],rainjacket:['rainjacket']};
@@ -2073,7 +2109,7 @@ app.addEventListener('click',e=>{
   }
   if(a.startsWith('b-')){ if(Date.now()-dragEndedAt<300) return; dbAct(a,b);return}
   if(a==='new'){wiz=newDraft(null);wizErr='';view='wiz';copyText=null;render();window.scrollTo(0,0)}
-  if(a==='edit'){wiz=newDraft(chart);wiz.editing=true;wiz.mode=chart.manual?'bags':(chart.adv?'advanced':'basic');wizErr='';view='wiz';copyText=null;render();window.scrollTo(0,0)}
+  if(a==='edit'){wiz=newDraft(chart);wiz.editing=true;wiz.prev=chart;wiz.mode=chart.manual?'bags':(chart.adv?'advanced':'basic');wizErr='';view='wiz';copyText=null;render();window.scrollTo(0,0)}
   if(a==='cancel'){view=wiz&&wiz.isNew?'start':'race';wiz=null;render();window.scrollTo(0,0)}
   if(a==='example'){wiz=newDraft(EXAMPLE);wizErr='';render()}
   if(a==='back'){readWizInputs();wizErr='';wiz.step--;render()}
@@ -2105,6 +2141,7 @@ app.addEventListener('click',e=>{
   if(a==='xlsx'){saveXlsx()}
 });
 app.addEventListener('change',e=>{
+  if(e.target.dataset&&e.target.dataset.chartsel&&chart){ chart[e.target.dataset.chartsel]=e.target.value; save(); render(); return; }
   if(view==='wiz' && wiz && wiz.step===1 && (e.target.name==='w-unit'||e.target.name==='w-cf')){readWizInputs();render()}
   if(view==='wiz' && e.target.id==='w-file'){ startImport(e.target.files&&e.target.files[0]); }
   if(view==='wiz' && imp && e.target.dataset.impf){ imp.map[e.target.dataset.impf]=+e.target.value; imp.err=''; render(); }
