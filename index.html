@@ -321,6 +321,7 @@ details.paste textarea{width:100%;min-height:110px;margin-top:8px;font-family:ui
 .meter i{display:block;height:100%;background:var(--teal)}
 /* visual bag + item pictures */
 .tzsel{width:auto;min-width:11rem;padding:6px 10px;font-size:.9rem}
+.locwarn{grid-column:1/-1;color:#7a5300;background:#fff4d6;border-left:4px solid #e0a21b;padding:6px 8px;border-radius:6px}
 .legal a{color:var(--teal);font-weight:600}
 .wxtop{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;background:var(--mist,#eef3f4);border-radius:10px;padding:12px 14px}.wxtop p{margin:0;max-width:70ch}
 .wxlist{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
@@ -1460,6 +1461,25 @@ function wxBanner(){
   return '<div class="banner"><p><b>Typical weather for '+where+'</b> on your race dates'+(ys.length?' in '+ys.join(', '):'')+'. Warnings use the coldest and hottest of those years. The real forecast shows up within about two weeks of race day.'+zn+'</p></div>';
 }
 
+/* Location sanity check. A straight line between two aid stations can't be longer than the course between them,
+   so if two locations are much farther apart than the miles between them on the course, one of them is probably
+   wrong (a typo in the coordinates, or a town with the same name in another state). LOC_SLACK_MI allows for towns
+   that sit a ways off the course. The station with the most conflicts gets the warning. */
+const LOC_SLACK_MI=25; let LW=null;
+function geoMi(a,b){ const R=3958.8, r=x=>x*Math.PI/180, dLa=r(b.lat-a.lat), dLo=r(b.lon-a.lon);
+  const h=Math.sin(dLa/2)**2+Math.cos(r(a.lat))*Math.cos(r(b.lat))*Math.sin(dLo/2)**2; return 2*R*Math.asin(Math.sqrt(h)); }
+function locWarnings(){
+  const st=chart.stations, keys=new Set(locKeys()), pts=st.filter(x=>keys.has(stKey(x))&&okLoc((bp.locs||{})[stKey(x)])).map(x=>({k:stKey(x),s:x,L:bp.locs[stKey(x)]}));
+  const bad={}, worst={};
+  for(let i=0;i<pts.length;i++) for(let j=i+1;j<pts.length;j++){
+    const a=pts[i], b=pts[j], line=geoMi(a.L,b.L), course=Math.abs(b.s.dist-a.s.dist);
+    if(line>course+LOC_SLACK_MI) [[a,b],[b,a]].forEach(([p,q])=>{ bad[p.k]=(bad[p.k]||0)+1; if(!worst[p.k]||line-course>worst[p.k].excess) worst[p.k]={other:q.s,line,course,excess:line-course}; });
+  }
+  const max=Math.max(0,...Object.values(bad)), out={};
+  Object.keys(bad).forEach(k=>{ if(bad[k]===max) out[k]=worst[k]; });
+  return out;
+}
+function locWarnText(w){ const u=uLabel(); return 'This spot is about '+Math.round(dShow(w.line))+' '+u+' from '+stLabel(w.other)+' in a straight line, but they\'re only '+dShow(w.course).toFixed(1)+' '+u+' apart on the course. Double-check the town or coordinates.'; }
 function stLocRow(s,i){
   const k=stKey(s), L=(bp.locs||{})[k], g=stGeo[k], last=i===chart.stations.length-1;
   const label=i===0?'Start':last?'Finish':s.name;
@@ -1468,10 +1488,12 @@ function stLocRow(s,i){
     '<button type="button" class="btn sm" data-act="b-stloc" data-k="'+esc(k)+'"'+(g&&g.busy?' disabled':'')+'>'+(g&&g.busy?'...':okLoc(L)?'Update':'Set')+'</button>'+
     (okLoc(L)&&!parseLatLon(L.name)?'<small class="muted num">'+L.lat.toFixed(3)+', '+L.lon.toFixed(3)+'</small>':'')+
     (g&&g.err?'<small class="errs">'+esc(g.err)+'</small>':'')+
+    (LW&&LW[k]?'<small class="locwarn" role="alert">⚠ '+esc(locWarnText(LW[k]))+'</small>':'')+
     (g&&g.alts?'<small>Not it? '+g.alts.map((a,j)=>'<button type="button" class="linkbtn" data-act="b-stalt" data-k="'+esc(k)+'" data-j="'+j+'">'+esc(a.name)+'</button>').join(' · ')+'</small>':'')+
     '</div>';
 }
 function dbLocBox(){
+  LW=locWarnings();
   const picked=new Set(bp.picks||[]), st=chart.stations, last=st.length-1;
   let h='<div class="locbox"><h3>Where are your drop bags?</h3>'+
     '<p class="preview">Give the start and each drop bag station a nearby town or its GPS coordinates. Each stretch uses the weather and daylight from the last drop bag you left, so on long courses the forecast follows you as you go. If a spot has no weather, the one before it is used. Only locations and dates are sent to the weather service.</p>';
@@ -1624,7 +1646,8 @@ function dbWeather(R,bags){
         status=(okLoc(mine)?'Unable to pull weather for this exact location, so this stretch uses the weather from '+from+'.':
                 'No location for this stop, so this stretch uses the weather from '+from+'.')+z; }
     }
-    h+='<div class="wxcard '+cls+'"><div class="wxhead"><b>'+esc(title)+'</b>'+mile+'</div><div class="wxwhere">'+where+'</div><p class="wxstat">'+(cls==='ok'?'✓ ':'⚠ ')+status+'</p>';
+    const lw=locWarnings()[key]; if(lw) cls='warn';
+    h+='<div class="wxcard '+cls+'"><div class="wxhead"><b>'+esc(title)+'</b>'+mile+'</div><div class="wxwhere">'+where+'</div>'+(lw?'<p class="wxstat">⚠ '+esc(locWarnText(lw))+'</p>':'')+'<p class="wxstat">'+(cls==='ok'?'✓ ':'⚠ ')+status+'</p>';
     if(hasWx()){
       const ctx=dbCtx(R,bags,k), x=ctx.wx;
       h+='<p class="wxsum">To '+esc(ctx.nextName)+': '+fmtT(x.lo)+' to '+fmtT(x.hi)+', rain up to '+x.rain+'%'+(x.events.length?', '+esc(x.events.map(evText).join(', ')):x.darkMin>0?', dark the whole way':', daylight the whole way')+'.</p>';
