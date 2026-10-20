@@ -1477,9 +1477,13 @@ function locWarnings(){
   }
   const max=Math.max(0,...Object.values(bad)), out={};
   Object.keys(bad).forEach(k=>{ if(bad[k]===max) out[k]=worst[k]; });
+  // When the two spots point at each other there's no way to tell which one is wrong, so both say so.
+  Object.values(out).forEach(w=>{ w.both=!!out[stKey(w.other)]; });
   return out;
 }
-function locWarnText(w){ const u=uLabel(); return 'This spot is about '+Math.round(dShow(w.line))+' '+u+' from '+stLabel(w.other)+' in a straight line, but they\'re only '+dShow(w.course).toFixed(1)+' '+u+' apart on the course. Double-check the town or coordinates.'; }
+function locWarnText(w){ const u=uLabel();
+  if(w.both) return 'Either this spot or '+stLabel(w.other)+' looks off. They\'re about '+Math.round(dShow(w.line))+' '+u+' apart in a straight line but only '+dShow(w.course).toFixed(1)+' '+u+' apart on the course. Check both.';
+  return 'This spot is about '+Math.round(dShow(w.line))+' '+u+' from '+stLabel(w.other)+' in a straight line, but they\'re only '+dShow(w.course).toFixed(1)+' '+u+' apart on the course. Double-check the town or coordinates.'; }
 function stLocRow(s,i){
   const k=stKey(s), L=(bp.locs||{})[k], g=stGeo[k], last=i===chart.stations.length-1;
   const label=i===0?'Start':last?'Finish':s.name;
