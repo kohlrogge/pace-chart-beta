@@ -186,3 +186,55 @@ def test_deleting_the_open_race(app):
     assert "Keep" in app.text("h1")
     app.act("b-open")
     assert "Where will you have drop bags" in app.text()
+
+
+# ---------- older saved races meeting the new setup ----------
+
+def test_editing_an_older_chart_without_a_date_asks_for_one(app):
+    app.seed([{"chart": chart(name="Old No Date", startDate="", display="clock")}])
+    app.open_race(); app.act("edit")
+    app.act("next")
+    assert "Pick the race date" in app.text(".err")
+    app.page.fill("#w-date", SOON)
+    app.act("next"); app.act("next"); app.act("next")
+    c = app.store()["races"][0]["chart"]
+    assert c["startDate"] == SOON and c["total"] == 34 * 60
+
+
+def test_editing_older_clock_cutoffs_without_a_date(app):
+    """An older chart with time-of-day cutoffs but no date: once the date is added, each cutoff gets its day automatically."""
+    c = chart(name="Old Clock", startDate="", cutoffFormat="clock")
+    app.seed([{"chart": c}])
+    before = [s_["cutoff"] for s_ in app.store()["races"][0]["chart"]["stations"]]
+    app.open_race(); app.act("edit")
+    app.page.fill("#w-date", "2026-10-24"); app.act("next")
+    for i, cut in enumerate(before[1:-1], start=1):       # every row with a cutoff got its day; rows without stay blank
+        assert (app.page.input_value(f"#w-c{i}d") != "") == (cut is not None), i
+    app.act("next"); app.act("next")
+    after = [s_["cutoff"] for s_ in app.store()["races"][0]["chart"]["stations"]]
+    assert after == before
+
+
+def test_drop_bags_only_windows_round_trip_on_edit(app):
+    win = [None, {"early": 3 * 60, "late": 5 * 60}, {"early": 20 * 60, "late": 26 * 60}]
+    c = {"isExample": False, "manual": True, "name": "Win RT", "unit": "mi", "entryUnit": "mi", "display": "clock", "startDate": SOON,
+         "startTime": 360, "cutoffFormat": "clock", "raceTz": "America/New_York", "labels": {"cut": "Latest"}, "plans": [],
+         "total": 26 * 60, "margin": 0, "windows": win,
+         "stations": [{"name": "Start", "dist": 0, "cutoff": None}, {"name": "Ridge", "dist": 12, "cutoff": None}, {"name": "Finish", "dist": 50, "cutoff": None}]}
+    app.seed([{"chart": c, "mode": "bags"}])
+    app.open_race(); app.act("edit"); app.act("next"); app.act("next")
+    p = app.page
+    assert (p.input_value("#w-l2d"), p.input_value("#w-l2"), p.input_value("#w-l2ap")) == ("1", "8:00", "AM")   # Sat 6 AM + 26 h
+    app.act("next")
+    assert app.store()["races"][0]["chart"]["windows"] == win
+
+
+def test_shrinking_overall_cutoff_drops_days_past_the_finish(app):
+    new_race(app, total="50:00")
+    p = app.page
+    p.check('input[name="w-cf"][value="clock"]')
+    p.fill("#w-n1", "Late AS"); p.fill("#w-d1", "60"); p.fill("#w-n2", "Finish"); p.fill("#w-d2", "100")
+    set_when(p, "w-c1", 2, "6:00", "AM")              # Mon 6:00 AM = 48 h
+    app.act("back"); p.fill("#w-total", "30:00"); app.act("next")
+    app.act("next")
+    assert app.page.locator(".err").count() == 1        # the Monday cutoff is now past the finish, or its day is gone

@@ -893,10 +893,10 @@ function newDraft(from){
     rows:[]};
   d.adv=!!c.adv; d.descent=c.descent||'mixed'; d.raceTz=c.raceTz||'';
   const tz=c.raceTz||DEV_TZ, dc=el=>c.startDate?dayClockOf(c.startDate,c.startTime,tz,el):{day:'',text:fmtClock12(c.startTime+el)};
-  if(c.manual){ d.mode='bags'; d.wins=c.stations.map((s,i)=>{const w=c.windows&&c.windows[i]; if(!w) return {e:'',ed:'',l:'',ld:''}; const a=dc(w.early), b=dc(w.late); return {e:a.text,ed:a.day,l:b.text,ld:b.day};}); }
+  if(c.manual){ d.mode='bags'; d.wins=c.stations.map((s,i)=>{const w=c.windows&&c.windows[i]; if(!w) return {e:'',ed:'',l:'',ld:''}; const a=dc(w.early), b=dc(w.late); return {e:a.text,ed:a.day,l:b.text,ld:b.day,eEl:w.early,lEl:w.late};}); }
   d.rows=c.stations.map(s=>{ const r={name:s.name,distText:s.dist==null?'':String(+(eu==='km'?s.dist*KM:s.dist).toFixed(2)),cutText:'',cutDay:'',origKey:stKey(s),
       gainText:s.gain==null?'':String(Math.round(eu==='km'?s.gain/FT_PER_M:s.gain)),lossText:s.loss==null?'':String(Math.round(eu==='km'?s.loss/FT_PER_M:s.loss))};
-    if(s.cutoff!=null){ if(d.cutoffFormat==='clock'){ const x=dc(s.cutoff); r.cutText=x.text; r.cutDay=x.day; } else r.cutText=fmtDur(s.cutoff); }
+    if(s.cutoff!=null){ if(d.cutoffFormat==='clock'){ const x=dc(s.cutoff); r.cutText=x.text; r.cutDay=x.day; r.cutEl=s.cutoff; } else r.cutText=fmtDur(s.cutoff); }
     return r; });
   return d;
 }
@@ -938,6 +938,11 @@ function readWizInputs(){
     const tt=q('w-total'); if(tt) wiz.totalText=tt.value;
     if(wiz.mode==='bags') wiz.display='clock';
     const d=document.querySelector('input[name=w-disp]:checked'); if(d) wiz.display=d.value;
+    // An older chart saved without a date: now that there is one, give its time-of-day cutoffs and windows their days.
+    const sm=startMin();
+    if(wiz.startDate&&!isNaN(sm)){ const tz=wiz.raceTz||DEV_TZ, fill=(el,set)=>{ if(el!=null) set(dayClockOf(wiz.startDate,sm,tz,el)); };
+      wiz.rows.forEach(r=>{ if(r.cutEl!=null&&(r.cutDay===''||r.cutDay==null)) fill(r.cutEl,x=>{r.cutDay=x.day;r.cutText=x.text;}); });
+      (wiz.wins||[]).forEach(w=>{ if(!w) return; if(w.eEl!=null&&(w.ed===''||w.ed==null)) fill(w.eEl,x=>{w.ed=x.day;w.e=x.text;}); if(w.lEl!=null&&(w.ld===''||w.ld==null)) fill(w.lEl,x=>{w.ld=x.day;w.l=x.text;}); }); }
   }
   if(wiz.step===2){
     const u=document.querySelector('input[name=w-unit]:checked');if(u)wiz.entryUnit=u.value;
@@ -945,7 +950,7 @@ function readWizInputs(){
     const last=wiz.rows.length-1;
     wiz.rows.forEach((r,i)=>{const n=q('w-n'+i),d=q('w-d'+i),up=q('w-up'+i),dn=q('w-dn'+i);if(n)r.name=n.value;if(d)r.distText=d.value;if(up)r.gainText=up.value;if(dn)r.lossText=dn.value;
       if(i===last||!q('w-c'+i)) return;
-      if(q('w-c'+i+'ap')){ r.cutText=readAmpm('w-c'+i); const dy=readDay('w-c'+i); if(dy!=null) r.cutDay=dy; } else r.cutText=q('w-c'+i).value; });
+      if(q('w-c'+i+'ap')){ r.cutText=readAmpm('w-c'+i); const dy=readDay('w-c'+i); if(dy!=null) r.cutDay=dy; } else r.cutText=q('w-c'+i).value; r.cutEl=null; });
     // The finish row's cutoff is the overall cutoff: an edit there updates it.
     if(q('w-c'+last)){
       if(q('w-c'+last+'ap')){ const el=wizElapsed(readDay('w-c'+last),readAmpm('w-c'+last)); if(!isNaN(el)&&el>0) wiz.totalText=fmtDur(el); }
@@ -953,7 +958,7 @@ function readWizInputs(){
     }
     const ds=document.querySelector('input[name=w-desc]:checked'); if(ds) wiz.descent=ds.value;
   }
-  if(wiz.step===3&&wiz.mode==='bags'){ wiz.wins.forEach((w,i)=>{const e=readAmpm('w-e'+i),l=readAmpm('w-l'+i),ed=readDay('w-e'+i),ld=readDay('w-l'+i);if(e!=null)w.e=e;if(l!=null)w.l=l;if(ed!=null)w.ed=ed;if(ld!=null)w.ld=ld}); return; }
+  if(wiz.step===3&&wiz.mode==='bags'){ wiz.wins.forEach((w,i)=>{const e=readAmpm('w-e'+i),l=readAmpm('w-l'+i),ed=readDay('w-e'+i),ld=readDay('w-l'+i);if(e!=null)w.e=e;if(l!=null)w.l=l;if(ed!=null)w.ed=ed;if(ld!=null)w.ld=ld;if(e!=null){w.eEl=null;w.lEl=null}}); return; }
   if(wiz.step===3){
     wiz.plans.forEach((p,i)=>{const l=q('w-pl'+i),t=q('w-pt'+i);if(l)p.label=l.value;if(t)p.timeText=t.value});
     wiz.labels.cut=q('w-lc').value||'Cutoff';
