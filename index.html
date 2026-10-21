@@ -597,8 +597,17 @@ const pad = n => String(n).padStart(2,'0');
 
 /* ---------- time helpers ---------- */
 function fmtDur(min){const m=Math.round(min);const s=m<0?'-':'';const a=Math.abs(m);return s+Math.floor(a/60)+':'+pad(a%60)}
+/* Phone number pads have a period but no colon, so time boxes take 6.45, 645 or 6 as well as 6:45.
+   timeNorm turns those into h:mm (an am/pm after the numbers is kept). */
+function timeNorm(t){
+  t=String(t||'').trim(); if(!t) return t;
+  let m=t.match(/^(\d{1,3})\s*[.,;]\s*(\d{2})(.*)$/); if(m) t=m[1]+':'+m[2]+m[3];   // 6.45 -> 6:45 (6.5 is left alone: half past or 6:50?)
+  m=t.match(/^(\d{3,5})(\s*[ap]\.?\s*m?\.?)?$/i); if(m) t=m[1].slice(0,-2)+':'+m[1].slice(-2)+(m[2]||'');
+  m=t.match(/^(\d{1,3})(\s*[ap]\.?\s*m?\.?)?$/i); if(m) t=m[1]+':00'+(m[2]||'');
+  return t;
+}
 function parseDur(str){
-  str=String(str||'').trim(); if(!str) return null;
+  str=timeNorm(str); if(!str) return null;
   let m=str.match(/^(\d{1,3})(?::(\d{1,2}))?$/); if(!m) return NaN;
   const mm = m[2]===undefined?0:+m[2]; if(mm>59) return NaN;
   return (+m[1])*60+mm;
@@ -623,23 +632,23 @@ function splitClock(t){
   return {tm:t,ap:''};
 }
 function clock12(t){   // strict: "h[:mm] AM|PM" with h 1-12 -> minutes after midnight, else null
-  const m=String(t||'').trim().match(/^(\d{1,2})(?::([0-5]\d))?\s*([AP])M$/i); if(!m) return null;
+  const m=timeNorm(t).match(/^(\d{1,2})(?::([0-5]\d))?\s*([AP])M$/i); if(!m) return null;
   const h=+m[1]; if(h<1||h>12) return null;
   return ((h%12)+(m[3].toUpperCase()==='P'?12:0))*60+(+(m[2]||0));
 }
 function clockErr(t,what){   // '' when fine
-  const s=splitClock(t);
+  t=timeNorm(t); const s=splitClock(t);
   if(!s.ap&&/\d/.test(s.tm)){ const m=s.tm.match(/^(\d{1,2})/); if(m&&(+m[1]>12||+m[1]===0)) return what+' should be a 12-hour time like 6:00, with AM or PM picked.'; return 'Pick AM or PM for '+what.toLowerCase()+'.'; }
   return clock12(t)==null?what+' should be a 12-hour time like 6:00 or 6:30, with AM or PM picked.':'';
 }
 function ampmField(id,text,ph,label){
   const v=splitClock(text);
-  return '<span class="ampm"><input class="in num" id="'+id+'" inputmode="decimal" value="'+esc(v.tm)+'" placeholder="'+esc(ph||'6:00')+'" autocomplete="off"'+(label?' aria-label="'+esc(label)+'"':'')+'>'+
+  return '<span class="ampm"><input class="in num timein" id="'+id+'" inputmode="decimal" value="'+esc(v.tm)+'" placeholder="'+esc(ph||'6:00')+'" autocomplete="off"'+(label?' aria-label="'+esc(label)+'"':'')+'>'+
     '<select class="in" id="'+id+'ap" aria-label="AM or PM'+(label?' for '+esc(label):'')+'"><option value="">AM/PM</option><option'+(v.ap==='AM'?' selected':'')+'>AM</option><option'+(v.ap==='PM'?' selected':'')+'>PM</option></select></span>';
 }
 function readAmpm(id){
   const a=document.getElementById(id), b=document.getElementById(id+'ap'); if(!a) return null;
-  let t=a.value.trim(), ap=b?b.value:''; const m=t.match(/\s*([ap])\.?\s*m?\.?\s*$/i);
+  let t=timeNorm(a.value), ap=b?b.value:''; const m=t.match(/\s*([ap])\.?\s*m?\.?\s*$/i);
   if(m&&t.slice(0,m.index).trim()){ ap=m[1].toUpperCase()+'M'; t=t.slice(0,m.index).trim(); }   // typed "2:45 pm" in the box
   return t?t+(ap?' '+ap:''):'';
 }
@@ -1115,7 +1124,7 @@ function renderWizard(){
        '<div class="field"><label for="w-date">Race date</label><input class="in" type="date" id="w-date" value="'+esc(w.startDate)+'"><span class="help">Used for the weather, daylight, and the days of the race.</span></div>'+
        '<div class="field"><label for="w-start">Start time</label>'+ampmField('w-start',w.startText,'6:00')+'</div>'+
        '<div class="field"><label for="w-tz">Start time zone</label>'+tzSelect('id="w-tz"',w.raceTz||(w.editing?raceTzName():DEV_TZ),false)+'<span class="help">The time zone the race starts in. The start time and posted cutoffs are read in this zone.</span></div>'+
-       (bags?'':'<div class="field"><label for="w-total">Overall cutoff (race time)</label><input class="in num" id="w-total" value="'+esc(w.totalText)+'" placeholder="34:00" inputmode="numeric"><span class="help">Hours:minutes from the start, like 34:00 or 30:00. This becomes the finish cutoff.</span></div>')+
+       (bags?'':'<div class="field"><label for="w-total">Overall cutoff (race time)</label><input class="in num timein" id="w-total" value="'+esc(w.totalText)+'" placeholder="34:00" inputmode="decimal"><span class="help">Hours:minutes from the start, like 34:00 or 30:00. This becomes the finish cutoff.</span></div>')+
        '</div>';
     if(!bags) h+='<div class="field" style="max-width:none"><span class="flabel">How should the chart show times?</span><span class="help">You can switch this later too.</span><div class="choices">'+
        radio('w-disp','elapsed',w.display,'Race time','Hours since the start, e.g. 14:25')+radio('w-disp','clock',w.display,'Time of day','Clock time, e.g. Sat 8:25 PM')+'</div></div>';
@@ -1140,8 +1149,8 @@ function renderWizard(){
       let cutCell='';
       if(!bags){
         if(first) cutCell='<span class="note">None</span>';
-        else if(last) cutCell=clockCut?whenField('w-c'+i,fin.day,fin.text,'Required','Finish cutoff'):'<input class="in num" id="w-c'+i+'" value="'+esc(w.totalText)+'" placeholder="34:00" aria-label="Finish cutoff">';
-        else cutCell=clockCut?whenField('w-c'+i,r.cutDay,r.cutText,'Optional','Cutoff for '+nm):'<input class="in num" id="w-c'+i+'" value="'+esc(r.cutText)+'" placeholder="Optional">';
+        else if(last) cutCell=clockCut?whenField('w-c'+i,fin.day,fin.text,'Required','Finish cutoff'):'<input class="in num timein" inputmode="decimal" id="w-c'+i+'" value="'+esc(w.totalText)+'" placeholder="34:00" aria-label="Finish cutoff">';
+        else cutCell=clockCut?whenField('w-c'+i,r.cutDay,r.cutText,'Optional','Cutoff for '+nm):'<input class="in num timein" inputmode="decimal" id="w-c'+i+'" value="'+esc(r.cutText)+'" placeholder="Optional">';
         cutCell='<td>'+cutCell+'</td>';
       }
       h+='<tr><td class="idx num">'+(first||last?(first?'S':'F'):'<button type="button" class="grip" data-grip="'+i+'" aria-label="Drag to move '+esc(r.name||'this aid station')+'" title="Drag to move">⠿</button>')+'</td>'+
@@ -1172,7 +1181,7 @@ function renderWizard(){
     w.plans.forEach((p,i)=>{
       h+='<tr><td class="idx num">'+(i+1)+'</td>'+
          '<td><input class="in" id="w-pl'+i+'" value="'+esc(p.label)+'" placeholder="'+(PLAN_NAMES[i]||'Goal')+'"></td>'+
-         '<td><input class="in num" id="w-pt'+i+'" value="'+esc(p.timeText)+'" placeholder="'+['28:00','32:00','33:00','33:30','33:45'][i]+'"></td>'+
+         '<td><input class="in num timein" inputmode="decimal" id="w-pt'+i+'" value="'+esc(p.timeText)+'" placeholder="'+['28:00','32:00','33:00','33:30','33:45'][i]+'"></td>'+
          '<td>'+(w.plans.length>1?'<button type="button" class="rm" data-act="rmplan" data-i="'+i+'" aria-label="Remove '+esc(p.label||'goal')+'">×</button>':'')+'</td></tr>';
     });
     h+='</tbody></table></div>';
@@ -2362,6 +2371,7 @@ app.addEventListener('click',e=>{
   if(a==='xlsx'){saveXlsx()}
 });
 app.addEventListener('change',e=>{
+  if(e.target.classList&&e.target.classList.contains('timein')){ const n=timeNorm(e.target.value); if(n!==e.target.value) e.target.value=n; }
   // "6:00 pm" typed into a time box: move the PM into its AM/PM menu.
   if(e.target.matches&&e.target.matches('.ampm input')){ const sel=document.getElementById(e.target.id+'ap'), v=splitClock(e.target.value); if(sel&&v.ap&&/^\d/.test(v.tm)&&/[ap]/i.test(e.target.value)){ e.target.value=v.tm; sel.value=v.ap; } }
   if(e.target.dataset&&e.target.dataset.chartsel&&chart){ chart[e.target.dataset.chartsel]=e.target.value; save(); render(); return; }

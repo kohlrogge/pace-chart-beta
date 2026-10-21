@@ -314,3 +314,50 @@ def test_typed_am_pm_moves_into_the_menu(app):
     p.fill("#w-start", "6:30 pm")
     p.dispatch_event("#w-start", "change")
     assert (p.input_value("#w-start"), p.input_value("#w-startap")) == ("6:30", "PM")
+
+
+# ---------- phone number pads: no colon key ----------
+
+@pytest.mark.parametrize("typed,shown", [("645", "6:45"), ("6.45", "6:45"), ("6", "6:00"), ("1230", "12:30"), ("6:45", "6:45")])
+def test_clock_box_accepts_number_pad_typing(app, typed, shown):
+    app.seed()
+    app.act("r-new"); app.act("r-mode", mode="basic")
+    p = app.page
+    p.fill("#w-start", typed); p.dispatch_event("#w-start", "change")
+    assert p.input_value("#w-start") == shown
+
+
+@pytest.mark.parametrize("typed,shown", [("34", "34:00"), ("3400", "34:00"), ("28.30", "28:30"), ("830", "8:30")])
+def test_race_time_box_accepts_number_pad_typing(app, typed, shown):
+    app.seed()
+    app.act("r-new"); app.act("r-mode", mode="basic")
+    p = app.page
+    p.fill("#w-total", typed); p.dispatch_event("#w-total", "change")
+    assert p.input_value("#w-total") == shown
+
+
+def test_number_pad_times_go_all_the_way_through(app):
+    """Typed with only digits and periods, as on a phone, a whole chart still builds."""
+    app.seed()
+    app.act("r-new"); app.act("r-mode", mode="basic")
+    p = app.page
+    p.fill("#w-name", "Phone"); p.fill("#w-date", "2026-10-24"); p.fill("#w-start", "6"); p.select_option("#w-startap", "AM")
+    p.fill("#w-total", "15")
+    app.act("next")
+    p.check('input[name="w-cf"][value="clock"]')
+    p.fill("#w-n1", "Ridge"); p.fill("#w-d1", "12.5")
+    set_when(p, "w-c1", 0, "2.45", "PM")
+    p.fill("#w-n2", "Finish"); p.fill("#w-d2", "50")
+    app.act("next")
+    p.fill("#w-pt0", "11"); p.fill("#w-pt1", "13.30")
+    app.act("next")
+    c = app.store()["races"][0]["chart"]
+    assert c["stations"][1]["cutoff"] == 8 * 60 + 45 and c["total"] == 15 * 60
+    assert [x["time"] for x in c["plans"]] == [11 * 60, 13 * 60 + 30]
+
+
+def test_time_boxes_open_the_number_pad(app):
+    app.seed()
+    app.act("r-new"); app.act("r-mode", mode="basic")
+    modes = app.page.eval_on_selector_all(".timein", "e=>e.map(x=>x.getAttribute('inputmode'))")
+    assert modes and set(modes) == {"decimal"}
