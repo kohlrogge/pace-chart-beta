@@ -361,3 +361,17 @@ def test_time_boxes_open_the_number_pad(app):
     app.act("r-new"); app.act("r-mode", mode="basic")
     modes = app.page.eval_on_selector_all(".timein", "e=>e.map(x=>x.getAttribute('inputmode'))")
     assert modes and set(modes) == {"decimal"}
+
+
+def test_period_turns_into_colon_while_typing(make_app):
+    app = make_app(viewport=(390, 844), mobile=True)
+    app.seed()
+    app.act("r-new"); app.act("r-mode", mode="basic")
+    p = app.page
+    p.click("#w-start")
+    p.keyboard.type("6.4")
+    assert p.input_value("#w-start") == "6:4"          # colon shows up as soon as the period is typed
+    p.keyboard.type("5")
+    assert p.input_value("#w-start") == "6:45"
+    p.click("#w-total"); p.keyboard.type("34.00")
+    assert p.input_value("#w-total") == "34:00"

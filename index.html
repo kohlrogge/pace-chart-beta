@@ -2388,6 +2388,10 @@ app.addEventListener('change',e=>{
   }
 });
 app.addEventListener('input',e=>{
+  // Phone number pads have a period but no colon: a period typed in a time box shows up as a colon right away.
+  if(e.target.classList&&e.target.classList.contains('timein')&&/[.,;]/.test(e.target.value)){
+    const el=e.target, pos=el.selectionStart; el.value=el.value.replace(/[.,;]/g,':'); try{ el.setSelectionRange(pos,pos); }catch(_){}
+  }
   if(e.target.id==='fb-text'){ fbText=e.target.value; return; }
   if(view!=='bags') return;
   const t=e.target;
