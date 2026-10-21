@@ -597,17 +597,8 @@ const pad = n => String(n).padStart(2,'0');
 
 /* ---------- time helpers ---------- */
 function fmtDur(min){const m=Math.round(min);const s=m<0?'-':'';const a=Math.abs(m);return s+Math.floor(a/60)+':'+pad(a%60)}
-/* Phone number pads have a period but no colon, so time boxes take 6.45, 645 or 6 as well as 6:45.
-   timeNorm turns those into h:mm (an am/pm after the numbers is kept). */
-function timeNorm(t){
-  t=String(t||'').trim(); if(!t) return t;
-  let m=t.match(/^(\d{1,3})\s*[.,;]\s*(\d{2})(.*)$/); if(m) t=m[1]+':'+m[2]+m[3];   // 6.45 -> 6:45 (6.5 is left alone: half past or 6:50?)
-  m=t.match(/^(\d{3,5})(\s*[ap]\.?\s*m?\.?)?$/i); if(m) t=m[1].slice(0,-2)+':'+m[1].slice(-2)+(m[2]||'');
-  m=t.match(/^(\d{1,3})(\s*[ap]\.?\s*m?\.?)?$/i); if(m) t=m[1]+':00'+(m[2]||'');
-  return t;
-}
 function parseDur(str){
-  str=timeNorm(str); if(!str) return null;
+  str=String(str||'').trim(); if(!str) return null;
   let m=str.match(/^(\d{1,3})(?::(\d{1,2}))?$/); if(!m) return NaN;
   const mm = m[2]===undefined?0:+m[2]; if(mm>59) return NaN;
   return (+m[1])*60+mm;
@@ -632,12 +623,12 @@ function splitClock(t){
   return {tm:t,ap:''};
 }
 function clock12(t){   // strict: "h[:mm] AM|PM" with h 1-12 -> minutes after midnight, else null
-  const m=timeNorm(t).match(/^(\d{1,2})(?::([0-5]\d))?\s*([AP])M$/i); if(!m) return null;
+  const m=String(t||'').trim().match(/^(\d{1,2})(?::([0-5]\d))?\s*([AP])M$/i); if(!m) return null;
   const h=+m[1]; if(h<1||h>12) return null;
   return ((h%12)+(m[3].toUpperCase()==='P'?12:0))*60+(+(m[2]||0));
 }
 function clockErr(t,what){   // '' when fine
-  t=timeNorm(t); const s=splitClock(t);
+  const s=splitClock(t);
   if(!s.ap&&/\d/.test(s.tm)){ const m=s.tm.match(/^(\d{1,2})/); if(m&&(+m[1]>12||+m[1]===0)) return what+' should be a 12-hour time like 6:00, with AM or PM picked.'; return 'Pick AM or PM for '+what.toLowerCase()+'.'; }
   return clock12(t)==null?what+' should be a 12-hour time like 6:00 or 6:30, with AM or PM picked.':'';
 }
@@ -648,7 +639,7 @@ function ampmField(id,text,ph,label){
 }
 function readAmpm(id){
   const a=document.getElementById(id), b=document.getElementById(id+'ap'); if(!a) return null;
-  let t=timeNorm(a.value), ap=b?b.value:''; const m=t.match(/\s*([ap])\.?\s*m?\.?\s*$/i);
+  let t=a.value.trim(), ap=b?b.value:''; const m=t.match(/\s*([ap])\.?\s*m?\.?\s*$/i);
   if(m&&t.slice(0,m.index).trim()){ ap=m[1].toUpperCase()+'M'; t=t.slice(0,m.index).trim(); }   // typed "2:45 pm" in the box
   return t?t+(ap?' '+ap:''):'';
 }
@@ -2371,7 +2362,6 @@ app.addEventListener('click',e=>{
   if(a==='xlsx'){saveXlsx()}
 });
 app.addEventListener('change',e=>{
-  if(e.target.classList&&e.target.classList.contains('timein')){ const n=timeNorm(e.target.value); if(n!==e.target.value) e.target.value=n; }
   // "6:00 pm" typed into a time box: move the PM into its AM/PM menu.
   if(e.target.matches&&e.target.matches('.ampm input')){ const sel=document.getElementById(e.target.id+'ap'), v=splitClock(e.target.value); if(sel&&v.ap&&/^\d/.test(v.tm)&&/[ap]/i.test(e.target.value)){ e.target.value=v.tm; sel.value=v.ap; } }
   if(e.target.dataset&&e.target.dataset.chartsel&&chart){ chart[e.target.dataset.chartsel]=e.target.value; save(); render(); return; }
@@ -2388,10 +2378,6 @@ app.addEventListener('change',e=>{
   }
 });
 app.addEventListener('input',e=>{
-  // Phone number pads have a period but no colon: a period typed in a time box shows up as a colon right away.
-  if(e.target.classList&&e.target.classList.contains('timein')&&/[.,;]/.test(e.target.value)){
-    const el=e.target, pos=el.selectionStart; el.value=el.value.replace(/[.,;]/g,':'); try{ el.setSelectionRange(pos,pos); }catch(_){}
-  }
   if(e.target.id==='fb-text'){ fbText=e.target.value; return; }
   if(view!=='bags') return;
   const t=e.target;

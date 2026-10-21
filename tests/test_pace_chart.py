@@ -316,44 +316,42 @@ def test_typed_am_pm_moves_into_the_menu(app):
     assert (p.input_value("#w-start"), p.input_value("#w-startap")) == ("6:30", "PM")
 
 
-# ---------- phone number pads: no colon key ----------
+# ---------- time boxes keep exactly what was typed ----------
 
-@pytest.mark.parametrize("typed,shown", [("645", "6:45"), ("6.45", "6:45"), ("6", "6:00"), ("1230", "12:30"), ("6:45", "6:45")])
-def test_clock_box_accepts_number_pad_typing(app, typed, shown):
-    app.seed()
-    app.act("r-new"); app.act("r-mode", mode="basic")
-    p = app.page
-    p.fill("#w-start", typed); p.dispatch_event("#w-start", "change")
-    assert p.input_value("#w-start") == shown
-
-
-@pytest.mark.parametrize("typed,shown", [("34", "34:00"), ("3400", "34:00"), ("28.30", "28:30"), ("830", "8:30")])
-def test_race_time_box_accepts_number_pad_typing(app, typed, shown):
+@pytest.mark.parametrize("typed", ["200", "34", "6.45", "645", "28:30"])
+def test_race_time_box_keeps_what_was_typed(app, typed):
+    """No automatic colons: 200 stays 200 (200 hours), it is never turned into 2:00."""
     app.seed()
     app.act("r-new"); app.act("r-mode", mode="basic")
     p = app.page
     p.fill("#w-total", typed); p.dispatch_event("#w-total", "change")
-    assert p.input_value("#w-total") == shown
+    assert p.input_value("#w-total") == typed
 
 
-def test_number_pad_times_go_all_the_way_through(app):
-    """Typed with only digits and periods, as on a phone, a whole chart still builds."""
+def test_bare_number_is_hours(app):
     app.seed()
     app.act("r-new"); app.act("r-mode", mode="basic")
     p = app.page
-    p.fill("#w-name", "Phone"); p.fill("#w-date", "2026-10-24"); p.fill("#w-start", "6"); p.select_option("#w-startap", "AM")
-    p.fill("#w-total", "15")
+    p.fill("#w-name", "Long"); p.fill("#w-date", "2026-10-24"); p.fill("#w-start", "6:00"); p.select_option("#w-startap", "AM")
+    p.fill("#w-total", "200")
     app.act("next")
-    p.check('input[name="w-cf"][value="clock"]')
-    p.fill("#w-n1", "Ridge"); p.fill("#w-d1", "12.5")
-    set_when(p, "w-c1", 0, "2.45", "PM")
-    p.fill("#w-n2", "Finish"); p.fill("#w-d2", "50")
+    p.fill("#w-n1", "Ridge"); p.fill("#w-d1", "100")
+    p.fill("#w-n2", "Finish"); p.fill("#w-d2", "240")
     app.act("next")
-    p.fill("#w-pt0", "11"); p.fill("#w-pt1", "13.30")
+    p.fill("#w-pt0", "80"); p.fill("#w-pt1", "190:30")
     app.act("next")
     c = app.store()["races"][0]["chart"]
-    assert c["stations"][1]["cutoff"] == 8 * 60 + 45 and c["total"] == 15 * 60
-    assert [x["time"] for x in c["plans"]] == [11 * 60, 13 * 60 + 30]
+    assert c["total"] == 200 * 60
+    assert [x["time"] for x in c["plans"]] == [80 * 60, 190 * 60 + 30]
+
+
+def test_period_is_not_turned_into_a_colon(make_app):
+    app = make_app(viewport=(390, 844), mobile=True)
+    app.seed()
+    app.act("r-new"); app.act("r-mode", mode="basic")
+    p = app.page
+    p.click("#w-total"); p.keyboard.type("34.5")
+    assert p.input_value("#w-total") == "34.5"
 
 
 def test_time_boxes_open_the_full_keyboard(app):
@@ -369,17 +367,3 @@ def test_time_boxes_open_the_full_keyboard(app):
     p.check('input[name="w-cf"][value="clock"]')
     assert all(b == ["text", "off", "off"] for b in boxes())                  # time-of-day cutoffs
     assert p.get_attribute("#w-d1", "inputmode") == "decimal"
-
-
-def test_period_turns_into_colon_while_typing(make_app):
-    app = make_app(viewport=(390, 844), mobile=True)
-    app.seed()
-    app.act("r-new"); app.act("r-mode", mode="basic")
-    p = app.page
-    p.click("#w-start")
-    p.keyboard.type("6.4")
-    assert p.input_value("#w-start") == "6:4"          # colon shows up as soon as the period is typed
-    p.keyboard.type("5")
-    assert p.input_value("#w-start") == "6:45"
-    p.click("#w-total"); p.keyboard.type("34.00")
-    assert p.input_value("#w-total") == "34:00"
