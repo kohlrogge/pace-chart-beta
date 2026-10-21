@@ -356,11 +356,19 @@ def test_number_pad_times_go_all_the_way_through(app):
     assert [x["time"] for x in c["plans"]] == [11 * 60, 13 * 60 + 30]
 
 
-def test_time_boxes_open_the_number_pad(app):
+def test_time_boxes_open_the_full_keyboard(app):
+    """Phones show their full keyboard (with the colon) for time boxes, with autocorrect off; distances keep the number pad."""
     app.seed()
     app.act("r-new"); app.act("r-mode", mode="basic")
-    modes = app.page.eval_on_selector_all(".timein", "e=>e.map(x=>x.getAttribute('inputmode'))")
-    assert modes and set(modes) == {"decimal"}
+    p = app.page
+    boxes = lambda: p.eval_on_selector_all(".timein", "e=>e.map(x=>[x.getAttribute('inputmode'),x.getAttribute('autocorrect'),x.getAttribute('autocapitalize')])")
+    assert boxes() and all(b == ["text", "off", "off"] for b in boxes())      # start time, overall cutoff
+    p.fill("#w-name", "Kb"); p.fill("#w-date", "2026-10-24"); p.fill("#w-start", "6:00 AM"); p.fill("#w-total", "30:00")
+    app.act("next")
+    assert all(b == ["text", "off", "off"] for b in boxes())                  # race-time cutoffs and the finish
+    p.check('input[name="w-cf"][value="clock"]')
+    assert all(b == ["text", "off", "off"] for b in boxes())                  # time-of-day cutoffs
+    assert p.get_attribute("#w-d1", "inputmode") == "decimal"
 
 
 def test_period_turns_into_colon_while_typing(make_app):

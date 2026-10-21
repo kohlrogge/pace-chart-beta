@@ -643,7 +643,7 @@ function clockErr(t,what){   // '' when fine
 }
 function ampmField(id,text,ph,label){
   const v=splitClock(text);
-  return '<span class="ampm"><input class="in num timein" id="'+id+'" inputmode="decimal" value="'+esc(v.tm)+'" placeholder="'+esc(ph||'6:00')+'" autocomplete="off"'+(label?' aria-label="'+esc(label)+'"':'')+'>'+
+  return '<span class="ampm"><input class="in num timein" id="'+id+'" inputmode="text" autocorrect="off" autocapitalize="off" spellcheck="false" value="'+esc(v.tm)+'" placeholder="'+esc(ph||'6:00')+'" autocomplete="off"'+(label?' aria-label="'+esc(label)+'"':'')+'>'+
     '<select class="in" id="'+id+'ap" aria-label="AM or PM'+(label?' for '+esc(label):'')+'"><option value="">AM/PM</option><option'+(v.ap==='AM'?' selected':'')+'>AM</option><option'+(v.ap==='PM'?' selected':'')+'>PM</option></select></span>';
 }
 function readAmpm(id){
@@ -1124,7 +1124,7 @@ function renderWizard(){
        '<div class="field"><label for="w-date">Race date</label><input class="in" type="date" id="w-date" value="'+esc(w.startDate)+'"><span class="help">Used for the weather, daylight, and the days of the race.</span></div>'+
        '<div class="field"><label for="w-start">Start time</label>'+ampmField('w-start',w.startText,'6:00')+'</div>'+
        '<div class="field"><label for="w-tz">Start time zone</label>'+tzSelect('id="w-tz"',w.raceTz||(w.editing?raceTzName():DEV_TZ),false)+'<span class="help">The time zone the race starts in. The start time and posted cutoffs are read in this zone.</span></div>'+
-       (bags?'':'<div class="field"><label for="w-total">Overall cutoff (race time)</label><input class="in num timein" id="w-total" value="'+esc(w.totalText)+'" placeholder="34:00" inputmode="decimal"><span class="help">Hours:minutes from the start, like 34:00 or 30:00. This becomes the finish cutoff.</span></div>')+
+       (bags?'':'<div class="field"><label for="w-total">Overall cutoff (race time)</label><input class="in num timein" id="w-total" value="'+esc(w.totalText)+'" placeholder="34:00" inputmode="text" autocorrect="off" autocapitalize="off" spellcheck="false"><span class="help">Hours:minutes from the start, like 34:00 or 30:00. This becomes the finish cutoff.</span></div>')+
        '</div>';
     if(!bags) h+='<div class="field" style="max-width:none"><span class="flabel">How should the chart show times?</span><span class="help">You can switch this later too.</span><div class="choices">'+
        radio('w-disp','elapsed',w.display,'Race time','Hours since the start, e.g. 14:25')+radio('w-disp','clock',w.display,'Time of day','Clock time, e.g. Sat 8:25 PM')+'</div></div>';
@@ -1149,8 +1149,8 @@ function renderWizard(){
       let cutCell='';
       if(!bags){
         if(first) cutCell='<span class="note">None</span>';
-        else if(last) cutCell=clockCut?whenField('w-c'+i,fin.day,fin.text,'Required','Finish cutoff'):'<input class="in num timein" inputmode="decimal" id="w-c'+i+'" value="'+esc(w.totalText)+'" placeholder="34:00" aria-label="Finish cutoff">';
-        else cutCell=clockCut?whenField('w-c'+i,r.cutDay,r.cutText,'Optional','Cutoff for '+nm):'<input class="in num timein" inputmode="decimal" id="w-c'+i+'" value="'+esc(r.cutText)+'" placeholder="Optional">';
+        else if(last) cutCell=clockCut?whenField('w-c'+i,fin.day,fin.text,'Required','Finish cutoff'):'<input class="in num timein" inputmode="text" autocorrect="off" autocapitalize="off" spellcheck="false" id="w-c'+i+'" value="'+esc(w.totalText)+'" placeholder="34:00" aria-label="Finish cutoff">';
+        else cutCell=clockCut?whenField('w-c'+i,r.cutDay,r.cutText,'Optional','Cutoff for '+nm):'<input class="in num timein" inputmode="text" autocorrect="off" autocapitalize="off" spellcheck="false" id="w-c'+i+'" value="'+esc(r.cutText)+'" placeholder="Optional">';
         cutCell='<td>'+cutCell+'</td>';
       }
       h+='<tr><td class="idx num">'+(first||last?(first?'S':'F'):'<button type="button" class="grip" data-grip="'+i+'" aria-label="Drag to move '+esc(r.name||'this aid station')+'" title="Drag to move">⠿</button>')+'</td>'+
@@ -1181,7 +1181,7 @@ function renderWizard(){
     w.plans.forEach((p,i)=>{
       h+='<tr><td class="idx num">'+(i+1)+'</td>'+
          '<td><input class="in" id="w-pl'+i+'" value="'+esc(p.label)+'" placeholder="'+(PLAN_NAMES[i]||'Goal')+'"></td>'+
-         '<td><input class="in num timein" inputmode="decimal" id="w-pt'+i+'" value="'+esc(p.timeText)+'" placeholder="'+['28:00','32:00','33:00','33:30','33:45'][i]+'"></td>'+
+         '<td><input class="in num timein" inputmode="text" autocorrect="off" autocapitalize="off" spellcheck="false" id="w-pt'+i+'" value="'+esc(p.timeText)+'" placeholder="'+['28:00','32:00','33:00','33:30','33:45'][i]+'"></td>'+
          '<td>'+(w.plans.length>1?'<button type="button" class="rm" data-act="rmplan" data-i="'+i+'" aria-label="Remove '+esc(p.label||'goal')+'">×</button>':'')+'</td></tr>';
     });
     h+='</tbody></table></div>';
